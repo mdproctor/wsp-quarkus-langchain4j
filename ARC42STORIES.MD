@@ -62,7 +62,7 @@ C4Context
 
 ## §4 Solution Strategy
 
-**Before:** The `agentic` module wraps `langchain4j-agentic` faithfully but mechanically — it registers agents as CDI beans but does not leverage Quarkus capabilities. Users cannot use CDI injection in agent configuration (static supplier methods only), agents lose CDI context in parallel execution, no OTel spans exist at the agent boundary, guardrails are unavailable, and no config namespace exists.
+**Before:** The `agentic` module registers agents as CDI beans and delegates execution faithfully to `langchain4j-agentic`. The next integration layer — CDI injection in agent configuration, context propagation in parallel execution, OTel spans at the agent boundary, guardrail support, and a config namespace — is what this work delivers.
 
 **After:** The `agentic` module becomes a first-class Quarkus integration: CDI injection replaces static suppliers, parallel execution propagates context via `ManagedExecutor`, agents appear in OTel traces and Micrometer metrics, guardrails apply to agent boundaries using the same API as AI services, and all parameters are tunable via `application.properties`.
 
@@ -585,7 +585,7 @@ Not closed here: L6, L8.
 
 #### What it adds (C1 portion)
 
-**Before:** `jsonRpcProvider` build step is not gated on `IsDevelopment.class` — registered in all profiles. `invokeAgent` accepts any class name from the browser (unauthenticated reflection). `AgenticRecorder.loadClassSafe` uses TCCL.
+**Before:** `jsonRpcProvider` build step is not gated on `IsDevelopment.class` — registered in all profiles. `invokeAgent` accepts any class name from the browser without validating against known agent classes. `AgenticRecorder.loadClassSafe` uses the thread context classloader, which is not reliable on Vert.x worker threads.
 
 **After (C1):** `jsonRpcProvider` gated on `IsDevelopment.class`. `invokeAgent` validates `agentClassName` against build-time allow-list. `loadClassSafe` uses `AgenticRecorder.class.getClassLoader()`.
 
@@ -633,7 +633,7 @@ write-once build-time data.
 
 **Why in-place rather than a new `quarkus-agentic` module:** the enhanced module uses the same `langchain4j-agentic` annotations as the user-facing API; a second module with the same annotations would create classpath conflicts with no resolution mechanism. All Quarkus wiring is additive on top of the existing synthetic bean infrastructure.
 
-**Tradeoff:** users of the current module get improved behaviour without migration, but existing behaviour that is wrong (e.g., default executor losing context) changes silently. Mitigate with release notes and the C1 build-time warnings.
+**Tradeoff:** users of the current module get improved behaviour without migration, but existing behaviour that changes (e.g., default executor gaining context propagation) will do so silently. Mitigate with release notes and the C1 build-time warnings.
 
 ---
 
