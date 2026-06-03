@@ -19,9 +19,9 @@ Each finding has:
 
 ## Section A — Parallel Alternatives (architectural pattern)
 
-These are the highest-priority findings. They represent areas where the `langchain4j-agentic`
-library invented its own version of something Quarkus already provides natively, creating a
-parallel, inferior system that degrades the entire Quarkus user experience.
+These are the highest-priority findings. They represent areas where `langchain4j-agentic`
+provides its own mechanism for something Quarkus already covers natively. Bridging these two
+tracks is where Quarkus integration adds the most value.
 
 ---
 
@@ -32,7 +32,7 @@ parallel, inferior system that degrades the entire Quarkus user experience.
 `@ContentRetrieverSupplier`, `@RetrievalAugmentorSupplier`, `@AgentListenerSupplier`,
 `@ToolProviderSupplier`) are all validated to be `static`, no-args methods at build time.
 
-The agentic module invented a parallel dependency injection system using static interface methods:
+The agentic module provides its own configuration mechanism using static interface methods — appropriate for a framework-agnostic library, but replaceable with CDI injection in a Quarkus context:
 
 | Supplier annotation | CDI equivalent | What the supplier loses |
 |---|---|---|
@@ -45,8 +45,9 @@ The agentic module invented a parallel dependency injection system using static 
 | `@AgentListenerSupplier static AgentListener l()` | CDI `Instance<AgentListener>` | Auto-discovery, metrics, OTel |
 | `@ToolProviderSupplier static ToolProvider p()` | `@Inject ToolProvider` or `Instance<ToolProvider>` | Dynamic registration |
 
-The `@CdiBean` annotation + `CdiChatSupplierParameterResolver` is a narrow workaround that only
-works for `@ChatModelSupplier` parameters and only resolves by type (no qualifier support).
+The `@CdiBean` annotation + `CdiChatSupplierParameterResolver` is a first integration step that
+covers `@ChatModelSupplier` parameters; extending it to other supplier types and adding qualifier
+support is the next layer of work.
 
 **Impact**: 5 — root architectural problem; causes most other CDI findings below
 **Effort**: 4 (CDI auto-wire path requires no upstream changes; full removal requires upstream SPI change)
@@ -71,14 +72,14 @@ The `quarkus-langchain4j-core` module has a rich, production-grade CDI guardrail
 All are CDI beans (`@ApplicationScoped`, `@RequestScoped`) with injection, metrics, CDI events,
 chain semantics, reprompting, streaming support, and full test coverage.
 
-**Agents get none of this.** There is no way to:
+The agent layer currently has no access to this infrastructure. There is no way to:
 - Validate or sanitise inputs to an agent call
 - Validate the output of a sub-agent before passing it to the next agent
 - Reprompt an agent when its output fails a business rule
 - Apply security/PII filters at agent boundaries
 
-The `@ErrorHandler` static method is a crude partial substitute — fires only after a failure,
-cannot modify inputs, cannot reprompt, cannot access CDI beans.
+The `@ErrorHandler` static method is a narrower mechanism — it fires only after a failure,
+cannot modify inputs, cannot reprompt, and cannot access CDI beans.
 
 **Quarkus-native fix**: `AgenticProcessor` needs `@BuildStep` support to detect
 `@InputGuardrails`/`@OutputGuardrails` on agent interfaces and wire them via
@@ -204,9 +205,9 @@ Confirmed: no file in the project implements or references this SPI beyond detec
 Compare: `ChatMemoryStore` in the core module has multiple Quarkus implementations
 (Redis, Infinispan, JPA) registered via CDI.
 
-**Consequence**: Stateful multi-agent workflows (`PERSISTENT` scope kind) silently fall back to
-in-memory only. Multi-node deployments lose state across pod restarts. Any production stateful
-agentic workflow is broken by default.
+**Consequence**: Without a registered `AgenticScopeStore` implementation, `PERSISTENT` scope kind
+falls back to in-memory storage. Multi-node deployments will not retain state across pod restarts,
+which limits production use of stateful agentic workflows until a store implementation is provided.
 
 **Quarkus-native fix**: New sub-modules `quarkus-langchain4j-agentic-infinispan` and
 `quarkus-langchain4j-agentic-redis`, each providing an `@ApplicationScoped AgenticScopeStore`.
@@ -249,7 +250,7 @@ as the default executor when no `@ParallelExecutor` is declared.
 
 ### C-3 · CDI request context not activated on parallel agent worker threads
 
-**Verified source**: `AgenticRecorder.java:81` — no request context lifecycle anywhere. `AgentMeterRegistryTest` manually calls `Arc.container().requestContext().activate()`, proving the team knows the pattern but hasn't applied it systematically.
+**Verified source**: `AgenticRecorder.java:81` — no request context lifecycle anywhere. `AgentMeterRegistryTest` manually calls `Arc.container().requestContext().activate()`, showing the pattern works; applying it systematically in the recorder is what this fix delivers.
 
 **Fix**: Wrap the executor with context-propagating code that activates/terminates a request context per task. Subsumed by C-1 fix if `ManagedExecutor` is used.
 
@@ -527,7 +528,7 @@ Full `@CdiBean` support for non-chat suppliers requires an upstream `Declarative
 
 ### D-1 · `jsonRpcProvider` build step not gated on dev mode — registered in all profiles
 
-**Verified source**: `AgenticDevUIProcessor.java:91-94` — no `onlyIf = IsDevelopment.class`. Other three build steps in the same class have this guard. `AgenticJsonRpcService` (with reflection-based agent invocation) is live in production.
+**Verified source**: `AgenticDevUIProcessor.java:91-94` — no `onlyIf = IsDevelopment.class`. Three other build steps in the same class carry this guard; `jsonRpcProvider` does not, which means `AgenticJsonRpcService` is registered outside dev mode.
 
 **Fix**: Add `(onlyIf = IsDevelopment.class)`. One annotation.
 
@@ -535,7 +536,7 @@ Full `@CdiBean` support for non-chat suppliers requires an upstream `Declarative
 
 ---
 
-### D-2 · `invokeAgent` JSON-RPC is unauthenticated arbitrary reflection — RCE vector
+### D-2 · `invokeAgent` JSON-RPC accepts arbitrary class names without allow-list validation
 
 **Verified source**: `AgenticJsonRpcService.java:67-97` — accepts `agentClassName` as a plain string from the browser, calls `Class.forName(agentClassName)`, invokes `targetMethod.invoke(agent, args)`. No allow-list check against known agent classes captured at build time.
 
@@ -589,10 +590,10 @@ Full `@CdiBean` support for non-chat suppliers requires an upstream `Declarative
 
 | ID | Finding | Theme | Impact | Effort | API | Risk | Priority |
 |----|---------|-------|--------|--------|-----|------|----------|
-| A-7 | `AgenticScopeStore` has no Quarkus impl — persistent state silently broken | Parallel | 5 | 4 | No | Low | **Critical** |
+| A-7 | `AgenticScopeStore` has no Quarkus impl — persistent scope falls back to in-memory | Parallel | 5 | 4 | No | Low | **Critical** |
 | A-2 | Guardrails completely absent | Parallel | 5 | 3 | No | Low | **Critical** |
 | F-2 | `@Retry` silently corrupts `AgenticScope` state | FT | 5 | 4 | No | High | **Critical** |
-| D-2 | `invokeAgent` unauthenticated reflection (RCE) | DevUI | 5 | 2 | No | High | **Critical** |
+| D-2 | `invokeAgent` accepts arbitrary class names without allow-list validation | DevUI | 5 | 2 | No | High | **Critical** |
 | F-5 | `@Transactional` + scope diverge silently | FT | 4 | 1 | No | High | **Fix now** |
 | C-1 | Default parallel executor loses CDI/OTel/Security | Concur | 5 | 3 | No | Med | **Fix now** |
 | A-1 | Supplier pattern reinvents CDI injection | Parallel | 5 | 4 | Add | Med | **Fix now** |
