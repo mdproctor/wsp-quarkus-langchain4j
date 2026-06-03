@@ -597,6 +597,14 @@ Not closed here: L6, L8.
 #### Gotchas
 🔲 at C4 close
 
+#### Architectural decisions (C1)
+
+**D-2 resolved (#2525):** Allow-list guard uses the `@RuntimeInit` recorder pattern
+(matching `enableDevModeMonitoring`) to pass build-time agent class names to
+`AgenticJsonRpcService`. A CDI bean would require the container to be available at
+the point of enforcement — the recorder fires earlier and is the correct bridge for
+write-once build-time data.
+
 ---
 
 ### Layer — L8: Persistence
