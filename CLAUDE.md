@@ -21,7 +21,7 @@ add-dir /Users/mdproctor/claude/public/quarkus-langchain4j
 | handover | `HANDOFF.md` |
 | idea-log | `IDEAS.md` |
 | design-snapshot | `snapshots/` |
-| java-update-design / update-primary-doc | `ARC42STORIES.MD` in project repo |
+| java-update-design / update-primary-doc | `ARC42STORIES.MD` (workspace) |
 | adr | `adr/` |
 | write-content | `blog/` |
 
@@ -40,7 +40,7 @@ add-dir /Users/mdproctor/claude/public/quarkus-langchain4j
 
 Two git repositories are active in every session:
 - **Workspace** (`~/claude/public/quarkus-langchain4j`) — plans, blog, snapshots, handover
-- **Project repo** (`/Users/mdproctor/claude/quarkus-langchain4j`) — source code, ARC42STORIES.MD, AGENTIC-NATIVE-AUDIT.md
+- **Project repo** (`/Users/mdproctor/claude/quarkus-langchain4j`) — source code only
 
 Never rely on CWD for git operations. Always use explicit paths:
 ```bash
@@ -55,7 +55,7 @@ git -C /Users/mdproctor/claude/quarkus-langchain4j add <file>           # projec
 - It is excluded via `.git/info/exclude` in the project repo (machine-local, not committed)
 - If it appears in `git status`, run: `echo "CLAUDE.md" >> /Users/mdproctor/claude/quarkus-langchain4j/.git/info/exclude`
 - Never run `git add CLAUDE.md` in the project repo — it will commit the symlink, not the content
-- The AGENTIC-NATIVE-AUDIT.md and ARC42STORIES.MD files are project artifacts — they CAN be committed when ready
+- `AGENTIC-NATIVE-AUDIT.md` and `ARC42STORIES.MD` live in the workspace — do not copy them to the project repo
 
 ## Navigation
 
