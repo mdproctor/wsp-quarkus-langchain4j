@@ -1,4 +1,5 @@
 # quarkus-langchain4j Workspace
+**Name:** quarkus-langchain4j
 
 **Project repo:** /Users/mdproctor/claude/quarkus-langchain4j
 **Workspace:** ~/claude/public/quarkus-langchain4j
@@ -99,6 +100,10 @@ git -C /Users/mdproctor/claude/quarkus-langchain4j add <file>           # projec
 
 - In workspace: `proj/` → project repo (`ls proj/` to browse the project)
 - In project: `wksp/` → workspace (`ls wksp/` to browse the workspace)
+
+## Writing Style Guide
+
+**The writing style guide at `~/claude-workspace/writing-styles/blog-technical.md` is mandatory for all blog and diary entries.** Load it in full before drafting. Complete the pre-draft voice classification (I / we / Claude-named) before generating any prose. Do not show a draft without verifying it against the style guide.
 
 ---
 
