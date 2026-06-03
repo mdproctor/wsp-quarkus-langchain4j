@@ -4,6 +4,29 @@
 **Workspace:** ~/claude/public/quarkus-langchain4j
 **Workspace type:** public
 
+## Goal
+
+Make the `agentic` module of `quarkus-langchain4j` a first-class Quarkus integration.
+
+The module currently wraps `langchain4j-agentic` faithfully but without leveraging
+Quarkus: CDI injection is blocked by static supplier methods, parallel agents lose
+context propagation, no OTel spans exist at agent boundaries, guardrails are absent,
+and no config namespace exists. 42 findings catalogued in `AGENTIC-NATIVE-AUDIT.md`.
+
+**Approach:** enhance the existing module in-place — same `langchain4j-agentic`
+annotations as user-facing API, proper Quarkus wiring underneath. Tight coupling
+to upstream; track manually per beta release. Planned as 8 chapters in `ARC42STORIES.MD`.
+
+**Parallel track:** contribute framework-agnostic SPI improvements upstream to
+`langchain4j-agentic` (supplier parameter resolver, threading contract, scope
+checkpoint) — framed as platform-independent improvements, not Quarkus-specific requests.
+
+**Key artifacts (workspace):**
+- `AGENTIC-NATIVE-AUDIT.md` — 42-finding audit, source of truth for what to fix
+- `ARC42STORIES.MD` — 8-chapter delivery plan, 7 layers, chapter sequencing rationale
+
+---
+
 ## Session Start
 
 Run these two before any other work:
@@ -11,6 +34,19 @@ Run these two before any other work:
 add-dir /Users/mdproctor/claude/quarkus-langchain4j
 add-dir /Users/mdproctor/claude/public/quarkus-langchain4j
 ```
+
+Then verify the project CLAUDE.md symlink exists:
+```bash
+ls -la /Users/mdproctor/claude/quarkus-langchain4j/CLAUDE.md
+```
+
+If it is missing (e.g. after a fresh clone or `git clean`), re-create it:
+```bash
+ln -sf /Users/mdproctor/claude/public/quarkus-langchain4j/CLAUDE.md /Users/mdproctor/claude/quarkus-langchain4j/CLAUDE.md
+echo "CLAUDE.md" >> /Users/mdproctor/claude/quarkus-langchain4j/.git/info/exclude
+```
+
+The symlink must always remain unstaged — never run `git add CLAUDE.md` in the project repo.
 
 ## Artifact Locations
 
