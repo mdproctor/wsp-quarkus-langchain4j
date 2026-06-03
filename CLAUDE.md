@@ -24,6 +24,8 @@ checkpoint) — framed as platform-independent improvements, not Quarkus-specifi
 **Key artifacts (workspace):**
 - `AGENTIC-NATIVE-AUDIT.md` — 42-finding audit, source of truth for what to fix
 - `ARC42STORIES.MD` — 8-chapter delivery plan, 7 layers, chapter sequencing rationale
+- `PLATFORM.md` — coherence protocol: run before implementing anything in the agentic module
+- `protocols/INDEX.md` — standing rules (upstream framing, CDI patterns, chapter sequencing)
 
 ---
 
