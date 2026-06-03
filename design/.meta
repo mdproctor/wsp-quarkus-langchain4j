@@ -1,0 +1,8 @@
+branch: fix/issue-2525-agentic-devui-invokeagent-allowlist
+project-sha: f0d0d3189478b00465ece8b26cf121c19bd0f1ab
+date: 2026-06-03
+issue: 2525
+issue-repo: quarkiverse/quarkus-langchain4j
+flyway-next-v: none
+design-repo: workspace
+design-section-hashes:
