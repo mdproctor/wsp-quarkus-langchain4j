@@ -81,7 +81,7 @@ The agent layer currently has no access to this infrastructure. There is no way 
 The `@ErrorHandler` static method is a narrower mechanism — it fires only after a failure,
 cannot modify inputs, cannot reprompt, and cannot access CDI beans.
 
-**Quarkus-native fix**: `AgenticProcessor` needs `@BuildStep` support to detect
+\*\*Quarkus fix\*\*: `AgenticProcessor` needs `@BuildStep` support to detect
 `@InputGuardrails`/`@OutputGuardrails` on agent interfaces and wire them via
 `QuarkusAgenticContextConsumer` into the `AgentConfigurator`. The guardrail CDI discovery
 and execution infrastructure already exists in `GuardrailsSupport`.
@@ -109,7 +109,7 @@ cannot inject `MeterRegistry` or `Tracer`, and cannot be globally observed acros
 Two separate observability tracks now exist in the same library: CDI events (core) vs
 `AgentListener` (agentic). Users must use both to observe the full execution.
 
-**Quarkus-native fix**: CDI auto-discovery of `AgentListener` beans via `Arc.container().select(AgentListener.class)` in `QuarkusAgenticContextConsumer`. Upstream: fire CDI events from `AgentMonitor`.
+\*\*Quarkus fix\*\*: CDI auto-discovery of `AgentListener` beans via `Arc.container().select(AgentListener.class)` in `QuarkusAgenticContextConsumer`. Upstream: fire CDI events from `AgentMonitor`.
 
 **Impact**: 4
 **Effort**: 3 (CDI auto-discovery requires no upstream change; CDI event firing requires upstream)
@@ -157,7 +157,7 @@ Two template syntaxes are now active simultaneously:
 will silently corrupt the prompt unless caught by the narrow canary test. The canary only checks
 one specific literal pattern.
 
-**Quarkus-native fix**: Upstream should either switch to Qute-compatible syntax or provide a
+\*\*Quarkus fix\*\*: Upstream should either switch to Qute-compatible syntax or provide a
 pluggable template engine SPI. Short-term: extend the content filter to handle all `{...}` patterns
 comprehensively, not just the one currently known.
 
@@ -186,7 +186,7 @@ Consequences:
 - No circuit-breaking via SmallRye Fault Tolerance
 - URL is hardcoded in annotation — not overridable via `application.properties`
 
-**Quarkus-native fix**: Provide a `VertxA2AHttpClient` implementing `A2AHttpClient` registered at build time in `AgenticProcessor`. Support `quarkus.langchain4j.agent.a2a.<name>.url` config property resolved at `RUNTIME_INIT`.
+\*\*Quarkus fix\*\*: Provide a `VertxA2AHttpClient` implementing `A2AHttpClient` registered at build time in `AgenticProcessor`. Support `quarkus.langchain4j.agent.a2a.<name>.url` config property resolved at `RUNTIME_INIT`.
 
 **Impact**: 4
 **Effort**: 2
@@ -209,7 +209,7 @@ Compare: `ChatMemoryStore` in the core module has multiple Quarkus implementatio
 falls back to in-memory storage. Multi-node deployments will not retain state across pod restarts,
 which limits production use of stateful agentic workflows until a store implementation is provided.
 
-**Quarkus-native fix**: New sub-modules `quarkus-langchain4j-agentic-infinispan` and
+\*\*Quarkus fix\*\*: New sub-modules `quarkus-langchain4j-agentic-infinispan` and
 `quarkus-langchain4j-agentic-redis`, each providing an `@ApplicationScoped AgenticScopeStore`.
 The core `AgenticProcessor` should detect a CDI `AgenticScopeStore` bean at build time and wire
 it at `RUNTIME_INIT` via the recorder.

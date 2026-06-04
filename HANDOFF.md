@@ -25,7 +25,7 @@ Start **Chapter 1 (Quick Wins & Safety)** — open an issue, create a branch. Au
 | C5 | Guarded Agents | L4 | A-2, G-1 | Depends on C2 |
 
 Full chapter plan and layer taxonomy: `ARC42STORIES.MD`  
-Full finding detail: `AGENTIC-NATIVE-AUDIT.md`  
+Full finding detail: `AGENTIC-INTEGRATION-AUDIT.md`  
 Coherence protocol: `PLATFORM.md`
 
 ## References
