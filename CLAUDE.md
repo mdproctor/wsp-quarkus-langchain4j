@@ -55,16 +55,20 @@ The symlink must always remain unstaged — never run `git add CLAUDE.md` in the
 
 ## Artifact Locations
 
+**All generated methodology artifacts stay in the workspace. The project repo contains source code only.**
+
 | Skill | Writes to |
 |-------|-----------|
-| brainstorming (specs) | `specs/` |
-| writing-plans (plans) | `plans/` |
-| handover | `HANDOFF.md` |
-| idea-log | `IDEAS.md` |
-| design-snapshot | `snapshots/` |
+| brainstorming (specs) | `specs/` (workspace) |
+| writing-plans (plans) | `plans/` (workspace) |
+| handover | `HANDOFF.md` (workspace) |
+| idea-log | `IDEAS.md` (workspace) |
+| design-snapshot | `snapshots/` (workspace) |
 | java-update-design / update-primary-doc | `ARC42STORIES.MD` (workspace) |
-| adr | `adr/` |
-| write-content | `blog/` |
+| adr | `adr/` (workspace) |
+| write-content | `blog/` (workspace) |
+
+**Never promote specs, plans, ADRs, snapshots, or blog entries to the project repo.** These are workspace artifacts — they would pollute upstream PRs with session methodology content that reviewers don't want and the project repo doesn't own.
 
 ## Structure
 
@@ -80,7 +84,7 @@ The symlink must always remain unstaged — never run `git add CLAUDE.md` in the
 ## Git Discipline — Two Repos
 
 Two git repositories are active in every session:
-- **Workspace** (`~/claude/public/quarkus-langchain4j`) — plans, blog, snapshots, handover
+- **Workspace** (`~/claude/public/quarkus-langchain4j`) — plans, blog, snapshots, handover, specs, ADRs
 - **Project repo** (`/Users/mdproctor/claude/quarkus-langchain4j`) — source code only
 
 Never rely on CWD for git operations. Always use explicit paths:
