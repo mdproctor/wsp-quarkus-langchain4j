@@ -113,6 +113,24 @@ git -C /Users/mdproctor/claude/quarkus-langchain4j add <file>           # projec
 
 ---
 
+## Routing
+
+All methodology artifacts live in the workspace. The project repo contains source code only.
+
+| Artifact | Destination | Notes |
+|----------|-------------|-------|
+| protocols | workspace | /Users/mdproctor/claude/public/quarkus-langchain4j/protocols/ — alongside PLATFORM.md in workspace root |
+| design | workspace | /Users/mdproctor/claude/public/quarkus-langchain4j/ARC42STORIES.MD |
+| blog | workspace | /Users/mdproctor/claude/public/quarkus-langchain4j/blog/ |
+| specs | workspace | /Users/mdproctor/claude/public/quarkus-langchain4j/specs/ |
+| plans | workspace | /Users/mdproctor/claude/public/quarkus-langchain4j/plans/ |
+| snapshots | workspace | /Users/mdproctor/claude/public/quarkus-langchain4j/snapshots/ |
+| adr | workspace | /Users/mdproctor/claude/public/quarkus-langchain4j/adr/ |
+
+**PLATFORM.md** lives at `/Users/mdproctor/claude/public/quarkus-langchain4j/PLATFORM.md` (workspace root). work-start's automatic check looks in `$PROJECT/docs/PLATFORM.md` — it won't find it there. Read it manually at the start of any agentic module work session.
+
+---
+
 ## Project Type
 
 type: java
