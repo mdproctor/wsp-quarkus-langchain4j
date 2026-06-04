@@ -3,6 +3,11 @@
 One rule per file. Self-contained and retrievable independently.
 Run `PLATFORM.md` before implementing anything in the `agentic` module.
 
+## quarkus/
+| File | Rule |
+|------|------|
+| [devui-runtime-dev-module.md](quarkus/devui-runtime-dev-module.md) | Dev UI JSON-RPC services belong in runtime-dev modules — production binaries must not include them |
+
 ## upstream/
 | File | Rule |
 |------|------|
