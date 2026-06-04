@@ -23,10 +23,11 @@ to upstream; track manually per beta release. Planned as 8 chapters in `ARC42STO
 checkpoint) — framed as platform-independent improvements, not Quarkus-specific requests.
 
 **Key artifacts (workspace):**
-- `AGENTIC-NATIVE-AUDIT.md` — 42-finding audit, source of truth for what to fix
+- `AGENTIC-INTEGRATION-AUDIT.md` — 42-finding audit, source of truth for what to fix
 - `ARC42STORIES.MD` — 8-chapter delivery plan, 7 layers, chapter sequencing rationale
 - `PLATFORM.md` — coherence protocol: run before implementing anything in the agentic module
 - `protocols/INDEX.md` — standing rules (upstream framing, CDI patterns, chapter sequencing)
+- `GARDEN-REFS.md` — curated universal garden entries relevant to this project (Quarkus extension, CDI, Maven, FaultTolerance); **consult before brainstorming or writing specs**
 
 ---
 
