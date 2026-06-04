@@ -51,6 +51,8 @@ echo "CLAUDE.md" >> /Users/mdproctor/claude/quarkus-langchain4j/.git/info/exclud
 
 The symlink must always remain unstaged — never run `git add CLAUDE.md` in the project repo.
 
+**Never add `wksp` to `.gitignore` in the project repo.** The `wksp` symlink pointing to the workspace is machine-local. Use `.git/info/exclude` instead (already configured). Adding it to `.gitignore` pollutes upstream PRs with a personal workspace artifact.
+
 ## Artifact Locations
 
 | Skill | Writes to |
