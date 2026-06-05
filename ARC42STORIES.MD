@@ -193,7 +193,7 @@ Standard Quarkus deployment — JVM or GraalVM native. No agentic-specific infra
 
 | # | Chapter | Layers | Delta summary | Status | Audit refs |
 |---|---|---|---|---|---|
-| C1 | Quick Wins & Safety | L6, L7 | Low, Low | 🔲 | D-1, D-2, F-3, F-4, F-5, F-7, C-6, C-7, S-3 |
+| C1 | Quick Wins & Safety | L6, L7 | Low, Low | ✅ | D-1, D-2, F-3, F-4, F-5, F-7, C-6, C-7, S-3 |
 | C2 | CDI-Native Agents | L1 | High | 🔲 | S-1, S-2, O-3, A-1 partial |
 | C3 | Parallel Safety | L2 | High | 🔲 | C-1, C-2, C-3, C-4 |
 | C4 | Observable Agents | L3, L7 | High, Med | 🔲 | O-1, O-2, O-4, O-5, D-4, O-6 |
