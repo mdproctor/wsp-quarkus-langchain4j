@@ -336,7 +336,9 @@ CDI qualifier annotations are extracted and passed to `Arc.container().select()`
 
 This is a runtime `Arc.container()` call, but it's inside the upstream
 `ChatSupplierParameterResolver` SPI — opt-in via `@CdiBean`, bounded scope.
-Separate from the build-time auto-wiring path.
+Separate from the build-time auto-wiring path. PR2b generalizes this resolver
+to all supplier types — the qualifier extraction logic here moves into
+`CdiParameterResolver` when upstream lands.
 
 ---
 
@@ -396,8 +398,9 @@ All tests are `@QuarkusTest` with isolated agent interfaces and CDI beans
   must walk the full interface hierarchy via `ValidationUtil.transitiveInterfaces()`
 - **build-time-warning-precision**: INFO log on multiple-bean ambiguity fires
   only when auto-wiring is blocked, not on valid multi-bean configurations
-- **upstream-contribution-framing**: No upstream changes required — all work is
-  Quarkus-side CDI wiring using existing `AgentBuilder` API
+- **upstream-contribution-framing**: No upstream changes required for PR1 —
+  all work is Quarkus-side CDI wiring using existing `AgentBuilder` API.
+  PR2's upstream PR follows the upstream-contribution-framing protocol.
 
 ---
 
