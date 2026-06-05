@@ -9,11 +9,11 @@
 ## Goal
 
 Agent configuration no longer requires static supplier methods. CDI beans of
-`ContentRetriever`, `ChatMemory`, `ChatMemoryProvider`, `RetrievalAugmentor`,
-and `ToolProvider` are automatically wired into any agent that does not declare
-a static supplier for that type. `AgentListener` CDI beans are auto-discovered
-and applied to all agents globally. The `@CdiBean` parameter resolver gains
-qualifier support.
+`ContentRetriever`, `ChatMemory`, `ChatMemoryProvider`, and
+`RetrievalAugmentor` are automatically wired into any agent that does not
+declare a static supplier for that type. `AgentListener` CDI beans are
+auto-discovered and applied to all agents globally. The `@CdiBean` parameter
+resolver gains qualifier support.
 
 ---
 
@@ -28,10 +28,30 @@ A-1 covers 8 supplier annotations. This chapter addresses:
 | `@ChatMemorySupplier` | Yes | CDI fallback auto-wiring |
 | `@ChatMemoryProviderSupplier` | Yes | CDI fallback auto-wiring |
 | `@RetrievalAugmentorSupplier` | Yes | CDI fallback auto-wiring |
-| `@ToolProviderSupplier` | Yes | CDI fallback auto-wiring (append-semantic) |
+| `@ToolProviderSupplier` | No | MCP module registers its own `ToolProvider` CDI bean — auto-wiring would double-wire or cause ambiguity (see ToolProvider Decision below) |
 | `@AgentListenerSupplier` | Yes | CDI additive auto-discovery (global) |
 | `@ToolsSupplier` | Deferred | Returns `Object[]` — requires `@Tool`-annotated bean scanning, different pattern; aligns with core module's `@RegisterAiService` tool discovery |
 | `@StreamingChatModelSupplier` | Deferred | Streaming variant of ChatModel; same build-time pattern but needs streaming-specific injection point plumbing |
+
+### ToolProvider Decision
+
+`ToolProvider` is excluded from the CDI fallback enum because:
+
+1. **MCP type collision.** The MCP deployment processor registers its own
+   `ToolProvider` CDI bean. This occupies the same CDI type space as any
+   user-defined `ToolProvider` bean. CDI fallback auto-wiring would either
+   double-wire the MCP bean (if it's the only `ToolProvider`) or cause
+   ambiguity (if a user bean also exists).
+
+2. **Append semantics make fallback meaningless.** `AgentBuilder.toolProvider()`
+   appends to a list — there's no single-value slot to "fall back" into. The
+   fallback concept (wire when no static supplier exists) only makes sense for
+   overwrite-semantic setters.
+
+3. **Existing path is sufficient.** MCP ToolProviders already have their own
+   wiring path via `hasMcpToolBox` + `Instance<ToolProvider>`. User
+   ToolProviders can use `@ToolProviderSupplier` static methods or the
+   `@CdiBean` parameter resolver.
 
 ---
 
@@ -50,17 +70,19 @@ SPI.)
 
 | Mode | Supplier types | Behavior |
 |------|---------------|----------|
-| **Fallback** | ContentRetriever, ChatMemory, ChatMemoryProvider, RetrievalAugmentor, ToolProvider | CDI bean is wired only when the agent declares no static supplier for that type AND exactly one CDI bean of that type is resolvable with `@Default` qualifier |
+| **Fallback** | ContentRetriever, ChatMemory, ChatMemoryProvider, RetrievalAugmentor | CDI bean is wired only when the agent declares no static supplier for that type AND exactly one CDI bean of that type is resolvable with `@Default` qualifier |
 | **Additive** | AgentListener | CDI beans are wired into ALL agents, composing with any per-agent `@AgentListenerSupplier` via `ComposedAgentListener` |
 
 ### Shared-instance constraint
 
 All agents without a static supplier for a given fallback type receive the
-**same CDI bean instance**. If two agents need different `ContentRetriever`
-instances, one of them must use a static `@ContentRetrieverSupplier` method
-(or the `@CdiBean` parameter resolver with qualifiers once upstream extends
-the SPI to non-chat suppliers). Per-agent CDI bean association via qualifiers
-(e.g., `@ForAgent(MyAgent.class)`) is out of scope for C2.
+**same CDI bean instance** (unless the bean is `@Dependent`, in which case
+each agent receives a separate instance). If two agents need different
+`ContentRetriever` instances, one of them must use a static
+`@ContentRetrieverSupplier` method (or the `@CdiBean` parameter resolver
+with qualifiers once upstream extends the SPI to non-chat suppliers).
+Per-agent CDI bean association via qualifiers (e.g.,
+`@ForAgent(MyAgent.class)`) is out of scope for C2.
 
 ### Upstream coupling
 
@@ -70,7 +92,7 @@ C2 depends on `DeclarativeUtil.configureAgent()` calling the
 If upstream reorders or adds a "set defaults after configurator" step, CDI
 beans could silently overwrite static suppliers for overwrite-semantic types
 (`contentRetriever`, `chatMemory`, `chatMemoryProvider`, `retrievalAugmentor`).
-`toolProvider` and `listener` are immune — they use append/compose semantics.
+`listener` is immune — it uses compose semantics.
 
 ### Why not a unified wiring descriptor
 
@@ -102,33 +124,32 @@ public record AiAgentCreateInfo(
 
 ```java
 /**
- * Supplier types eligible for CDI auto-wiring when no static supplier is
- * declared on the agent interface.
+ * Supplier types eligible for CDI fallback auto-wiring when no static
+ * supplier is declared on the agent interface.
  *
- * <p>For most types, the upstream {@code AgentBuilder} setter is overwrite-semantic
- * (simple field assignment) — the build-time check ensures CDI beans are only
- * wired when no static supplier exists, preventing silent overwrites.
+ * <p>All types in this enum have overwrite-semantic setters on
+ * {@code AgentBuilder} (simple field assignment). The build-time check
+ * ensures CDI beans are only wired when no static supplier exists,
+ * preventing silent overwrites.
  *
- * <p>{@link #TOOL_PROVIDER} is the exception: {@code AgentBuilder.toolProvider()}
- * uses append semantics (adds to a list). This makes it safe to wire alongside
- * MCP ToolProvider or static suppliers. Despite being in this enum, it behaves
- * as "CDI-eligible" rather than strict "fallback."
+ * <p>{@code ToolProvider} is excluded — its append semantics and MCP type
+ * collision make fallback auto-wiring inappropriate (see spec: ToolProvider
+ * Decision).
  *
- * <p>This enum is coupled to {@code langchain4j-agentic}'s supplier annotation
- * set. If upstream adds new supplier annotations, this enum must be updated in
- * both runtime and deployment modules. The set has been stable across several
- * betas; the enum provides exhaustive switch coverage and type safety, which
- * outweighs the maintenance cost of manual updates.
+ * <p>{@code AgentListener} is excluded — it uses a separate additive path
+ * ({@code Instance<AgentListener>} injection on every agent).
  *
- * <p>{@code AgentListener} is not in this enum — it uses a separate additive
- * path ({@code Instance<AgentListener>} injection on every agent).
+ * <p>This enum is coupled to {@code langchain4j-agentic}'s supplier
+ * annotation set. If upstream adds new supplier annotations, this enum
+ * must be updated in both runtime and deployment modules. The set has been
+ * stable across several betas; the enum provides exhaustive switch coverage
+ * and type safety, which outweighs the maintenance cost of manual updates.
  */
 public enum CdiSupplierType {
     CONTENT_RETRIEVER,
     CHAT_MEMORY,
     CHAT_MEMORY_PROVIDER,
-    RETRIEVAL_AUGMENTOR,
-    TOOL_PROVIDER
+    RETRIEVAL_AUGMENTOR
 }
 ```
 
@@ -145,13 +166,15 @@ its own flag.
 ### Build step ordering
 
 The `cdiSupport` step already consumes `InterceptorResolverBuildItem`, which
-is produced in the same `ArcProcessor.validate()` step as
-`BeanDiscoveryFinishedBuildItem`. Adding `BeanDiscoveryFinishedBuildItem` as
-a parameter does not change the step's execution ordering — both are produced
-at the same build phase. The step continues to produce `SyntheticBeanBuildItem`,
-which is consumed by Arc's internal synthetic bean registration step that runs
-later. No existing build step depends on agent synthetic beans being available
-before `BeanDiscoveryFinishedBuildItem`.
+runs after bean discovery. `BeanDiscoveryFinishedBuildItem` is produced
+earlier (after bean discovery, before validation), while
+`InterceptorResolverBuildItem` is produced during validation. Adding
+`BeanDiscoveryFinishedBuildItem` as a parameter does not change the step's
+execution ordering — the step already runs after both are available. The step
+continues to produce `SyntheticBeanBuildItem`, which is consumed by Arc's
+internal synthetic bean registration step that runs later. No existing build
+step depends on agent synthetic beans being available before
+`BeanDiscoveryFinishedBuildItem`.
 
 ### Bean resolution semantics
 
@@ -179,7 +202,7 @@ its scope. If the bean is `@RequestScoped` or `@SessionScoped`:
   created at application startup when no request context is active. Use
   `@ApplicationScoped` or provide the bean via a static supplier method."
 
-This applies to all five fallback types AND `AgentListener`.
+This applies to all four fallback types AND `AgentListener`.
 
 ### Supplier auto-wiring (fallback types)
 
@@ -213,11 +236,12 @@ In the `cdiSupport` build step, for each detected agent:
 2. Mark all `AgentListener` CDI beans as unremovable (if any exist)
 3. Validate scope of each `AgentListener` bean (see CDI scope validation)
 
-### MCP ToolProvider (generalized)
+### MCP ToolProvider
 
 `hasMcpToolBox` moves from a static `Set<String>` into `AiAgentCreateInfo`.
-The `Instance<ToolProvider>` injection point is already added for every agent.
-At runtime, the MCP-specific ToolProvider wiring is conditional on `hasMcpToolBox`.
+The `Instance<ToolProvider>` injection point is already added for every agent
+(unchanged from the existing code). At runtime, the MCP-specific ToolProvider
+wiring is conditional on `hasMcpToolBox`.
 
 ---
 
@@ -225,9 +249,20 @@ At runtime, the MCP-specific ToolProvider wiring is conditional on `hasMcpToolBo
 
 All injection uses `Instance<T>` with `isResolvable()` checks — consistent with
 the existing `ToolProvider` pattern and defensive against bean removal by later
-build steps.
+build steps. Each fallback type has a pre-built `TypeLiteral` constant.
 
 ```java
+private static final TypeLiteral<Instance<ContentRetriever>>
+    CONTENT_RETRIEVER_INSTANCE = new TypeLiteral<>() {};
+private static final TypeLiteral<Instance<ChatMemory>>
+    CHAT_MEMORY_INSTANCE = new TypeLiteral<>() {};
+private static final TypeLiteral<Instance<ChatMemoryProvider>>
+    CHAT_MEMORY_PROVIDER_INSTANCE = new TypeLiteral<>() {};
+private static final TypeLiteral<Instance<RetrievalAugmentor>>
+    RETRIEVAL_AUGMENTOR_INSTANCE = new TypeLiteral<>() {};
+private static final TypeLiteral<Instance<AgentListener>>
+    AGENT_LISTENER_INSTANCE = new TypeLiteral<>() {};
+
 @Override
 public void accept(DeclarativeAgentCreationContext agenticContext) {
     AgentBuilder<?, ?> builder = agenticContext.agentBuilder();
@@ -235,20 +270,30 @@ public void accept(DeclarativeAgentCreationContext agenticContext) {
     // Fallback CDI suppliers (per-agent, only when no static supplier)
     for (CdiSupplierType type : aiAgentCreateInfo.cdiResolvedSuppliers()) {
         switch (type) {
-            case CONTENT_RETRIEVER -> wireIfResolvable(
-                ContentRetriever.class, builder::contentRetriever);
-            case CHAT_MEMORY -> wireIfResolvable(
-                ChatMemory.class, builder::chatMemory);
-            case CHAT_MEMORY_PROVIDER -> wireIfResolvable(
-                ChatMemoryProvider.class, builder::chatMemoryProvider);
-            case RETRIEVAL_AUGMENTOR -> wireIfResolvable(
-                RetrievalAugmentor.class, builder::retrievalAugmentor);
-            case TOOL_PROVIDER -> wireIfResolvable(
-                ToolProvider.class, builder::toolProvider);
+            case CONTENT_RETRIEVER -> {
+                Instance<ContentRetriever> i = cdiContext
+                    .getInjectedReference(CONTENT_RETRIEVER_INSTANCE);
+                if (i.isResolvable()) builder.contentRetriever(i.get());
+            }
+            case CHAT_MEMORY -> {
+                Instance<ChatMemory> i = cdiContext
+                    .getInjectedReference(CHAT_MEMORY_INSTANCE);
+                if (i.isResolvable()) builder.chatMemory(i.get());
+            }
+            case CHAT_MEMORY_PROVIDER -> {
+                Instance<ChatMemoryProvider> i = cdiContext
+                    .getInjectedReference(CHAT_MEMORY_PROVIDER_INSTANCE);
+                if (i.isResolvable()) builder.chatMemoryProvider(i.get());
+            }
+            case RETRIEVAL_AUGMENTOR -> {
+                Instance<RetrievalAugmentor> i = cdiContext
+                    .getInjectedReference(RETRIEVAL_AUGMENTOR_INSTANCE);
+                if (i.isResolvable()) builder.retrievalAugmentor(i.get());
+            }
         }
     }
 
-    // MCP ToolProvider (additive — kept alongside any CDI ToolProvider)
+    // MCP ToolProvider (additive — unchanged from existing code)
     if (aiAgentCreateInfo.hasMcpToolBox()) {
         Instance<ToolProvider> mcpToolProvider =
             cdiContext.getInjectedReference(TOOL_PROVIDER_TYPE_LITERAL);
@@ -259,18 +304,9 @@ public void accept(DeclarativeAgentCreationContext agenticContext) {
 
     // AgentListener CDI beans (global, additive — always applied)
     Instance<AgentListener> listeners =
-        cdiContext.getInjectedReference(AGENT_LISTENER_TYPE_LITERAL);
+        cdiContext.getInjectedReference(AGENT_LISTENER_INSTANCE);
     for (AgentListener listener : listeners) {
         builder.listener(listener);
-    }
-}
-
-private <T> void wireIfResolvable(Class<T> type,
-        java.util.function.Consumer<T> builderSetter) {
-    Instance<T> instance = cdiContext.getInjectedReference(
-        new TypeLiteral<Instance<T>>() {}); // actual implementation uses pre-built TypeLiterals
-    if (instance.isResolvable()) {
-        builderSetter.accept(instance.get());
     }
 }
 ```
@@ -310,7 +346,7 @@ Separate from the build-time auto-wiring path.
 |------|--------|
 | `agentic/runtime/.../AiAgentCreateInfo.java` | Add `cdiResolvedSuppliers`, `hasMcpToolBox` fields |
 | `agentic/runtime/.../CdiSupplierType.java` | New enum |
-| `agentic/runtime/.../AgenticRecorder.java` | Remove `agentsWithMcpToolBox` static field; update `QuarkusAgenticContextConsumer` to handle all supplier types and AgentListener via `Instance<T>` |
+| `agentic/runtime/.../AgenticRecorder.java` | Remove `agentsWithMcpToolBox` static field; update `QuarkusAgenticContextConsumer` to handle all supplier types and AgentListener via `Instance<T>` with pre-built `TypeLiteral` constants |
 | `agentic/runtime/.../CdiChatSupplierParameterResolver.java` | Add qualifier extraction |
 | `agentic/deployment/.../AgenticProcessor.java` | Add `BeanDiscoveryFinishedBuildItem` consumption, CDI bean detection, scope validation, injection points, `AiAgentCreateInfo` construction update |
 | `agentic/deployment/src/test/java/...` | New test classes (see Test Strategy) |
@@ -341,8 +377,6 @@ Separate from the build-time auto-wiring path.
 
 ### Coexistence and regression tests
 
-- MCP + CDI ToolProvider coexistence: agent with no `@ToolProviderSupplier` +
-  CDI `ToolProvider` bean + MCP ToolBox → both are wired
 - `hasMcpToolBox` migration: existing MCP tests pass after moving from
   static `Set<String>` to `AiAgentCreateInfo`
 - ChatModel wiring regression: existing `ChatModelInfo.FromBeanWithName` path
@@ -378,6 +412,10 @@ All tests are `@QuarkusTest` with isolated agent interfaces and CDI beans
 
 ## Out of Scope
 
+- **`@ToolProviderSupplier` CDI auto-wiring** — excluded due to MCP type
+  collision and append semantics (see ToolProvider Decision). ToolProviders
+  wire via MCP path, static `@ToolProviderSupplier`, or `@CdiBean` parameter
+  resolver.
 - **`@ToolsSupplier` CDI auto-wiring** — returns `Object[]`, requires scanning
   for `@Tool`-annotated CDI beans. Different pattern from single-typed suppliers.
   The core module's `@RegisterAiService` already does this; aligning the agentic
