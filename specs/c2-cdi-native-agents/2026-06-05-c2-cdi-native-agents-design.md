@@ -410,21 +410,143 @@ All tests are `@QuarkusTest` with isolated agent interfaces and CDI beans
 
 ---
 
+## PR2 — Generalized ParameterResolver
+
+PR1 (above) ships Quarkus-side auto-wiring with no upstream changes. PR2
+files an upstream PR to `langchain4j-agentic` and follows up with a Quarkus
+extension once upstream merges. These are independent — PR1 does not depend
+on PR2.
+
+### Problem
+
+`ChatSupplierParameterResolver` enables pluggable parameter injection for
+`@ChatModelSupplier` methods — but ONLY for chat model suppliers. All other
+supplier annotations enforce zero parameters (or a single required parameter
+like `Object memoryId` for `@ChatMemoryProviderSupplier`). This means:
+
+- `@ContentRetrieverSupplier` methods can't receive CDI/Spring beans
+- `@AgentListenerSupplier` methods can't inject `MeterRegistry` or `Tracer`
+- `@ParallelExecutor` methods can't inject `ManagedExecutor`
+- Users resort to `Arc.container().select(...)` or
+  `applicationContext.getBean(...)` inside static methods
+
+The same friction applies to all 9 zero-parameter supplier types plus
+`@ParallelExecutor`.
+
+### Upstream PR (PR2a): Generalized ParameterResolver
+
+**Scope:** Generalize `ChatSupplierParameterResolver` to all supplier
+annotations.
+
+**Change:** Introduce a `SupplierParameterResolver` SPI (or rename the
+existing `ChatSupplierParameterResolver`) applicable to all annotated static
+supplier methods. For each annotation type:
+
+1. Keep required parameters validated (e.g., `Object memoryId` for
+   `@ChatMemoryProviderSupplier`)
+2. Allow additional parameters resolved by the `SupplierParameterResolver`
+   chain
+3. Resolver chain is pluggable — frameworks register their own resolvers
+
+**Affected annotations (12):**
+
+| Annotation | Required params | Additional params via resolver |
+|---|---|---|
+| `@ChatModelSupplier` | (existing — unchanged) | Already supported |
+| `@StreamingChatModelSupplier` | (existing — unchanged) | Already supported |
+| `@ContentRetrieverSupplier` | None | New |
+| `@ChatMemorySupplier` | None | New |
+| `@ChatMemoryProviderSupplier` | `Object memoryId` | New (alongside memoryId) |
+| `@RetrievalAugmentorSupplier` | None | New |
+| `@ToolProviderSupplier` | None | New |
+| `@ToolsSupplier` | None | New |
+| `@PlannerSupplier` | None | New |
+| `@AgentListenerSupplier` | None | New |
+| `@McpClientSupplier` | None | New |
+| `@ParallelExecutor` | None | New |
+
+**Upstream framing:** "The `ChatSupplierParameterResolver` pattern has proven
+valuable for dynamic model selection — DI frameworks and custom resolvers can
+inject managed instances into `@ChatModelSupplier` methods. This PR
+generalizes the same pattern to all supplier annotations. Spring users get
+`@SpringBean`-annotated parameters, Quarkus users get `@CdiBean`, and plain
+Java users can register custom resolvers. Required parameters (`memoryId`,
+etc.) remain validated. No breaking changes — `ChatSupplierParameterResolver`
+becomes a type alias for backward compatibility."
+
+**Backward compatibility:** Existing zero-parameter supplier methods continue
+to work unchanged. The parameter validation relaxes from "exactly zero" to
+"zero or more, with additional params resolved by the resolver chain."
+
+### Quarkus follow-up (PR2b): CdiParameterResolver
+
+After upstream merges PR2a:
+
+1. Rename `CdiChatSupplierParameterResolver` → `CdiParameterResolver`
+2. Register it for all supplier types (not just `@ChatModelSupplier`)
+3. `@CdiBean` + qualifiers work on any supplier method:
+
+```java
+@ContentRetrieverSupplier
+static ContentRetriever retriever(
+        @CdiBean @Named("vectorDb") ContentRetriever r) {
+    return r;
+}
+```
+
+4. Per-agent bean selection becomes possible without auto-wiring changes —
+   the static method is a one-liner pass-through that declares which
+   qualified bean to use
+
+**Interaction with PR1 auto-wiring:** PR1's auto-wiring handles the common
+case (one default bean, zero ceremony). PR2b handles the power case
+(multiple beans, per-agent selection via qualifiers). They compose — auto-
+wiring fires when no static supplier exists; the `@CdiBean` resolver fires
+when a static supplier IS present and has `@CdiBean` parameters.
+
+### Future scope (C7): Workflow control annotations
+
+The same ParameterResolver pattern applies to workflow control annotations.
+Once PR2a's infrastructure exists in upstream, extending it to these
+annotations is a validation-constraint relaxation — not a new SPI:
+
+| Annotation | Required params | Benefit of @CdiBean params |
+|---|---|---|
+| `@ErrorHandler` | `ErrorContext` | DLQ injection, alerting, retry budget |
+| `@ActivationCondition` | `@V` params or `AgenticScope` | Feature-flag-driven routing |
+| `@ExitCondition` | `@LoopCounter` | Metric/threshold-driven loop exit |
+| `@Output` | (varies) | DI in output assembly |
+
+These would be a separate upstream PR filed during C7 work.
+
+### Related: ExecutorProvider SPI (C3 scope)
+
+Not part of C2, but noted here for completeness.
+`DefaultExecutorProvider` is a utility class in `langchain4j-core` with no
+SPI — frameworks cannot replace the default parallel executor globally. A
+separate upstream PR during C3 would introduce an `AgentExecutorProvider`
+interface discoverable via ServiceLoader, allowing Quarkus to register a
+`ManagedExecutor`-based implementation and Spring to register a
+`TaskExecutor` wrapper. This is independent of PR2.
+
+---
+
 ## Out of Scope
 
 - **`@ToolProviderSupplier` CDI auto-wiring** — excluded due to MCP type
   collision and append semantics (see ToolProvider Decision). ToolProviders
   wire via MCP path, static `@ToolProviderSupplier`, or `@CdiBean` parameter
-  resolver.
+  resolver. PR2b extends `@CdiBean` to `@ToolProviderSupplier` params.
 - **`@ToolsSupplier` CDI auto-wiring** — returns `Object[]`, requires scanning
   for `@Tool`-annotated CDI beans. Different pattern from single-typed suppliers.
   The core module's `@RegisterAiService` already does this; aligning the agentic
-  module would be a separate effort.
+  module would be a separate effort. (PR2b enables `@CdiBean` on
+  `@ToolsSupplier` params as a narrower alternative.)
 - **`@StreamingChatModelSupplier` CDI auto-wiring** — streaming variant of
   `ChatModel`. Same build-time pattern but needs streaming-specific injection
   point plumbing. Deferred to when streaming agent support is prioritized.
-- **Per-agent CDI bean association via qualifiers** (e.g.,
-  `@ForAgent(MyAgent.class)`) — not needed until multi-agent systems with
-  per-agent retrievers are common.
+- **Per-agent CDI bean association via qualifiers** — addressed by PR2b:
+  `@CdiBean @Named("x")` on supplier method parameters enables per-agent
+  bean selection after upstream merges the generalized ParameterResolver.
 - **`leafAgentClassNames` static field cleanup** — C3 (Parallel Safety) concern.
 - **Dev-mode monitoring state cleanup** — orthogonal to CDI wiring.
