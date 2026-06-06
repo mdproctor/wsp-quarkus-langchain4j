@@ -194,7 +194,7 @@ Standard Quarkus deployment — JVM or GraalVM native. No agentic-specific infra
 | # | Chapter | Layers | Delta summary | Status | Audit refs |
 |---|---|---|---|---|---|
 | C1 | Quick Wins & Safety | L6, L7 | Low, Low | ✅ | D-1, D-2, F-3, F-4, F-5, F-7, C-6, C-7, S-3 |
-| C2 | CDI-Native Agents | L1 | High | 🔲 | S-1, S-2, O-3, A-1 partial |
+| C2 | CDI-Native Agents | L1 | High | 🔄 | S-1, S-2, O-3, A-1 partial |
 | C3 | Parallel Safety | L2 | High | 🔲 | C-1, C-2, C-3, C-4 |
 | C4 | Observable Agents | L3, L7 | High, Med | 🔲 | O-1, O-2, O-4, O-5, D-4, O-6 |
 | C5 | Guarded Agents | L4 | High | 🔲 | A-2, G-1 |
@@ -254,11 +254,11 @@ The Dev UI `invokeAgent` endpoint is protected against arbitrary class loading. 
 
 #### Chapter 2 — CDI-Native Agents
 
-**Journey:** J1 | **Sequence:** 2 of 8 | **Status:** 🔲  
-**Issues:** 🔲 | **Blog:** 🔲
+**Journey:** J1 | **Sequence:** 2 of 8 | **Status:** 🔄 implemented, PR pending  
+**Issues:** 🔲 | **Blog:** 🔲 | **Branch:** `c2-cdi-native-agents`
 
 **What this delivers**  
-Agent configuration no longer requires static supplier methods. A `ContentRetriever`, `ChatMemory`, `RetrievalAugmentor`, or `AgentListener` CDI bean is automatically wired into any agent that does not declare a static supplier for that type. `AgentListener` CDI beans are auto-discovered and applied to all agents globally — this unblocks OTel, metrics, guardrails, and persistence listeners in later chapters.
+Agent configuration no longer requires static supplier methods. `ContentRetriever`, `ChatMemory`, `ChatMemoryProvider`, and `RetrievalAugmentor` CDI beans are automatically wired into any agent that does not declare a static supplier for that type (build-time detection via `BeanDiscoveryFinishedBuildItem`, runtime wiring via `Instance<T>` injection points). `AgentListener` CDI beans are auto-discovered globally and compose additively with per-agent `@AgentListenerSupplier`. `@CdiBean` parameter resolver gains qualifier support (S-2). `@RequestScoped`/`@SessionScoped` beans rejected at build time.
 
 **Accountability gaps closed**
 - Static supplier pattern blocks CDI injection, scoping, and testability → L1
@@ -402,11 +402,11 @@ Agent scope state (`AgenticScope`) survives pod restarts and spans multiple node
 
 **Before:** All agent configuration requires static methods on the agent interface (`@ChatModelSupplier`, `@ToolsSupplier`, etc.). CDI injection is impossible; the `@CdiBean` annotation is a narrow workaround for `@ChatModelSupplier` only.
 
-**After:** `QuarkusAgenticContextConsumer` detects CDI beans of the relevant types (`ContentRetriever`, `ChatMemory`, `RetrievalAugmentor`, `AgentListener`) at build time via `BeanDiscoveryFinishedBuildItem` and injects them via `SyntheticCreationalContext`. `Arc.container().select(AgentListener.class)` in the consumer auto-discovers all listener CDI beans globally.
+**After:** `AgenticProcessor.cdiSupport()` detects CDI beans of the relevant types (`ContentRetriever`, `ChatMemory`, `ChatMemoryProvider`, `RetrievalAugmentor`) at build time via `BeanDiscoveryFinishedBuildItem` and adds `Instance<T>` injection points to agent synthetic beans. `QuarkusAgenticContextConsumer` wires them at runtime via `SyntheticCreationalContext.getInjectedReference()`. `AgentListener` CDI beans are discovered via an unconditional `Instance<AgentListener>` injection point on every agent — no `Arc.container()` calls in the auto-wiring path.
 
 What this layer adds:
 - **Supplier auto-wire** — for each supplier type without a static method, detects CDI bean at build time and injects via `SyntheticCreationalContext.getInjectedReference`; eliminates static method requirement for common types
-- **AgentListener CDI discovery** — `Arc.container().select(AgentListener.class)` in `QuarkusAgenticContextConsumer`; unblocks O-1, O-2, A-2, L8 listener wiring
+- **AgentListener CDI discovery** — unconditional `Instance<AgentListener>` injection point on every agent; runtime iterates and calls `agentBuilder.listener()` for each; unblocks O-1, O-2, A-2, L8 listener wiring
 - **Qualifier-aware `@CdiBean` resolution** — extracts qualifier annotations from parameters before `Arc.container().select(type, qualifiers)`; prevents `AmbiguousResolutionException` with named models
 
 Not closed here: L2 (context propagation on worker threads), L4 (guardrail wiring).
