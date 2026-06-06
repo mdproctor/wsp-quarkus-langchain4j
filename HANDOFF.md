@@ -1,35 +1,35 @@
 # Handoff — quarkus-langchain4j
-_2026-06-05_
+_2026-06-06_
 
 ## Last Session
 
-Completed Chapter 1 (PRs #2525, #2526 in review), then improved the tooling foundation: protocol skill updated with three-tier model, work-start/work-end fixed for workspace-native layouts, GARDEN-REFS.md added to surface relevant garden entries before brainstorming. PR #2526 updated with a proper `runtime-dev` Maven module for `AgenticJsonRpcService` following reviewer feedback.
+Completed Chapter 2 (CDI-Native Agents). Build-time auto-wiring for 4 supplier types + AgentListener global CDI discovery + S-2 qualifier fix + scope validation + `agentsWithMcpToolBox` cleanup. Squashed to 2 commits, pushed to fork, PR #2542 opened as draft on quarkiverse with before/after comparison table. CLAUDE.md updated with remote topology rule (PRs only to blessed repo). Two garden entries submitted (standalone RAG skip, MCP ToolProvider collision).
 
 ## Immediate Next Step
 
-Start **Chapter 2 (CDI-Native Agents)**. Open an issue on `quarkiverse/quarkus-langchain4j`, create the branch with `work-start`. C2 centres on `AgentListener` CDI auto-discovery (`O-3`) which unblocks C4 and C5.
+Start **Chapter 3 (Parallel Safety)** or **wait for PR #2542 review feedback**. C3 centres on `ManagedExecutor` replacing `DefaultExecutorProvider` (C-1 through C-4) — requires an upstream `AgentExecutorProvider` SPI PR. If starting C3: `work-start`, file the upstream PR first (per upstream-contribution-framing protocol).
 
 ## What's Left
 
-- PR #2526 awaiting review — MCP test failures are pre-existing/unrelated, safe to ignore · S | Low
-- PR #2534 (C1 remaining items) awaiting review · S | Low
-- `quarkus-langchain4j-agentic-dev` module naming: reviewers may want a different convention — watch for feedback · XS | Low
-- File upstream PR to `langchain4j-agentic` for C-6 (`CompletableFuture.allOf()` fix) — filed as langchain4j/langchain4j#5360, no code submitted yet · S | Med
+- PR #2525, #2526, #2534 (C1) awaiting review · S | Low
+- PR #2542 (C2, draft) awaiting review · M | Low
+- Upstream langchain4j/langchain4j#5360 (C-6 fix) — issue filed, no code · S | Med
 
 ## What's Next
 
-| # | Chapter | Layers | Audit refs | Notes |
-|---|---------|--------|------------|-------|
-| C2 | CDI-Native Agents | L1 | S-1, S-2, O-3, A-1 | `AgentListener` CDI discovery unblocks C4 and C5 |
-| C3 | Parallel Safety | L2 | C-1, C-2, C-3, C-4 | Can develop in parallel with C2 |
-| C4 | Observable Agents | L3, L7 | O-1, O-2, O-4, O-5, D-4 | Depends on C2 and C3 |
-| C5 | Guarded Agents | L4 | A-2, G-1 | Depends on C2 |
+| # | Chapter | Audit refs | Notes |
+|---|---------|------------|-------|
+| C3 | Parallel Safety | C-1 through C-4 | Needs upstream `AgentExecutorProvider` SPI PR |
+| C4 | Observable Agents | O-1, O-2, O-4, O-5, D-4 | Depends on C2 + C3 |
+| C5 | Guarded Agents | A-2, G-1 | Depends on C2 |
+| PR2a | Upstream ParameterResolver | S-4 | Generalise `ChatSupplierParameterResolver` to all supplier types |
 
 ## References
 
 - Workspace: `~/claude/public/quarkus-langchain4j/`
 - Project: `/Users/mdproctor/claude/quarkus-langchain4j/`
-- Full chapter plan: `ARC42STORIES.MD` (C1 now ✅)
-- Finding detail: `AGENTIC-INTEGRATION-AUDIT.md`
-- Garden refs: `GARDEN-REFS.md` — consult before C2 brainstorm
-- Protocol: `protocols/INDEX.md` — three-tier, check before implementing
+- Full chapter plan: `ARC42STORIES.MD` (C1 ✅, C2 🔄)
+- C2 spec: `specs/c2-cdi-native-agents/`
+- C2 plan: `plans/attic/c2-cdi-native-agents/`
+- Garden refs: `GARDEN-REFS.md`
+- Protocols: `protocols/INDEX.md`
