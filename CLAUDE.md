@@ -154,5 +154,6 @@ Issue tracking: declined
 |-------|------|--------|------|--------|
 | [#5376](https://github.com/langchain4j/langchain4j/issues/5376) | langchain4j/langchain4j | Filed | Pluggable `DefaultExecutorProvider` SPI for parallel agent execution | Nothing — C3 proceeds without it; simplifies Quarkus wiring if accepted |
 | [#5377](https://github.com/langchain4j/langchain4j/issues/5377) | langchain4j/langchain4j | Filed | Generalise `ChatSupplierParameterResolver` to all supplier types | Nothing — C3 defers C-4 to this; `@ParallelExecutor` stays static until accepted |
+| [#5378](https://github.com/langchain4j/langchain4j/issues/5378) | langchain4j/langchain4j | Filed | Allow `@ParallelExecutor` to accept DI-injected parameters | Blocked by #5377 |
 | ~~[#5360](https://github.com/langchain4j/langchain4j/issues/5360)~~ | langchain4j/langchain4j | Closed | Parallel execution waits on submission order rather than completion order | — |
 
