@@ -1,0 +1,9 @@
+branch: c3-parallel-safety
+project-sha: a7a51a93cfe0c308a1095f42d67eaf0f5222bb3e
+date: 2026-06-06
+issue:
+issue-repo:
+covers:
+flyway-next-v: none
+design-repo: workspace
+design-section-hashes:
