@@ -146,3 +146,12 @@ type: java
 workspace: ~/claude/public/quarkus-langchain4j
 Issue tracking: declined
 
+---
+
+## Upstream Contributions
+
+| Issue | Repo | Status | What | Blocks |
+|-------|------|--------|------|--------|
+| [#5376](https://github.com/langchain4j/langchain4j/issues/5376) | langchain4j/langchain4j | Filed | Pluggable `DefaultExecutorProvider` SPI for parallel agent execution | Nothing — C3 proceeds without it; simplifies Quarkus wiring if accepted |
+| ~~[#5360](https://github.com/langchain4j/langchain4j/issues/5360)~~ | langchain4j/langchain4j | Closed | Parallel execution waits on submission order rather than completion order | — |
+
