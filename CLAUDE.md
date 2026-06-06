@@ -94,6 +94,14 @@ git -C /Users/mdproctor/claude/public/quarkus-langchain4j add <file>    # worksp
 git -C /Users/mdproctor/claude/quarkus-langchain4j add <file>           # project
 ```
 
+## Git Discipline — Remote Topology
+
+The project repo has two remotes:
+- **`fork`** (`casehubio/quarkus-langchain4j`) — our fork. Push here always.
+- **`origin`** (`quarkiverse/quarkus-langchain4j`) — the blessed upstream repo. **Never push directly.** All changes to the blessed repo go via PR from the fork.
+
+At work-end, the fork push is mandatory. The blessed repo prompt should always be **[R] Open PR**, never **[P] Push directly**.
+
 ## Git Discipline — CLAUDE.md Symlink
 
 **CLAUDE.md in the project repo is a symlink pointing here. Never stage or commit it.**
