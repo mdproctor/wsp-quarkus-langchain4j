@@ -196,7 +196,7 @@ Standard Quarkus deployment — JVM or GraalVM native. No agentic-specific infra
 | C1 | Quick Wins & Safety | L6, L7 | Low, Low | ✅ | D-1, D-2, F-3, F-4, F-5, F-7, C-6, C-7, S-3 |
 | C2 | CDI-Native Agents | L1 | High | 🔄 | S-1, S-2, O-3, A-1 partial |
 | C3 | Parallel Safety | L2 | High | 🔄 | C-1, C-2, C-3, C-4 |
-| C4 | Observable Agents | L3, L7 | High, Med | 🔲 | O-1, O-2, O-4, O-5, D-4, O-6 |
+| C4 | Observable Agents | L3, L7 | High, Med | 🔄 | O-1, O-2, O-4, O-5, D-4, O-6 |
 | C5 | Guarded Agents | L4 | High | 🔲 | A-2, G-1 |
 | C6 | Configurable Agents | L5 | Medium | 🔲 | L-1, L-2, L-3 |
 | C7 | Resilient Agents | L6 | High | 🔲 | F-2, F-6 — upstream PRs required |
@@ -477,8 +477,8 @@ Not closed here: L3 (OTel spans at agent boundaries — needs L1 first), L6 (ret
 **After:** Three CDI `AgentListener` beans auto-discovered via L1: `AgentSpanListener` (opens/closes OTel spans), `AgentMetricsListener` (records counters and timers), `AgentCdiEventListener` (fires `AgentStartedEvent`/`AgentCompletedEvent`). `@Readiness` health check reports agent availability. Dev UI returns structured JSON instead of HTML.
 
 What this layer adds:
-- **Agent OTel spans** — `AgentSpanListener` opens a span named `gen_ai.agent.invoke` in `beforeAgentInvocation`, closes in `afterAgentInvocation`; conditioned on `OpenTelemetrySdkBuildItem` capability
-- **Agent Micrometer metrics** — `AgentMetricsListener` records `gen_ai.agent.invocations`, `gen_ai.agent.duration`, `gen_ai.agent.errors`, `gen_ai.agent.tool.executions`; conditioned on `MetricsCapabilityBuildItem`
+- **Agent OTel spans** — `AgentSpanListener` opens a span named `langchain4j.agent.<agentName>` in `beforeAgentInvocation`, closes in `afterAgentInvocation`; conditioned on `Capability.OPENTELEMETRY_TRACER`
+- **Agent Micrometer metrics** — `AgentMetricsListener` records `gen_ai.agent.invocations` (counter with `error.type` tag), `gen_ai.agent.duration`, `gen_ai.agent.tool.executions`; conditioned on `MetricsCapabilityBuildItem`
 - **CDI event bridge** — `AgentCdiEventListener` fires typed CDI events; enables user code to observe agent lifecycle without implementing `AgentListener`
 - **Readiness probe** — `AgentHealthCheck` (@Readiness) resolves root agent CDI beans; reports DOWN if any fail
 
