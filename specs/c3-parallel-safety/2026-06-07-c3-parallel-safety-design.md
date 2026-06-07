@@ -62,9 +62,21 @@ User-declared `@ParallelExecutor` is still respected — `configureParallel()` s
 ### Changes
 
 **1. Upstream (`langchain4j-core`)** — new `ExecutorServiceProvider` SPI:
-- New SPI interface in `dev.langchain4j.spi` (or `dev.langchain4j.internal`)
-- Modify `DefaultExecutorProvider` to check static override first, then `ServiceLoader`, then fall back to `newVirtualThreadPerTaskExecutor()`
-- Static setter: `DefaultExecutorProvider.setDefaultExecutorService(Executor executor)`
+
+```java
+package dev.langchain4j.spi;
+
+import java.util.concurrent.ExecutorService;
+
+public interface ExecutorServiceProvider {
+    ExecutorService get();
+}
+```
+
+Modify `DefaultExecutorProvider` to check static override first, then `ServiceLoader`, then fall back to `newVirtualThreadPerTaskExecutor()`:
+- Static setter: `DefaultExecutorProvider.setDefaultExecutorService(ExecutorService executorService)`
+- The static override field must be `volatile` (concurrent reads from agent worker threads)
+- `ServiceLoader` discovery is cached in the lazy holder (runs once on first access, not per-call)
 
 **2. Quarkus (`agentic/runtime`)** — one recorder method:
 - `AgenticRecorder.registerDefaultExecutorProvider()` at `@RuntimeInit`
@@ -84,11 +96,11 @@ User-declared `@ParallelExecutor` is still respected — `configureParallel()` s
 
 ## Testing
 
-**1. Default executor propagation** — `@ParallelAgent` with two sub-agents, one using a `@RequestScoped` CDI bean in a tool. Without the fix: `ContextNotActiveException`. With the fix: request context is active.
+**1. Default executor propagation** — `@ParallelAgent` with two sub-agents, one using a `@RequestScoped` CDI bean in a tool. Verify request context is active on parallel worker threads — `@RequestScoped` bean is accessible from sub-agent tool without `ContextNotActiveException`.
 
 **2. User-declared `@ParallelExecutor` respected** — `@ParallelAgent` with explicit `@ParallelExecutor` returning a custom executor. Verify Quarkus does not override it. Assert the info message about bypassed context propagation appears in the build log.
 
-**3. SecurityIdentity propagation** — `@ParallelAgent` where a sub-agent tool checks `SecurityIdentity`. Verify identity propagates to worker threads.
+**3. SecurityIdentity propagation (best effort)** — `@ParallelAgent` where a sub-agent tool checks `SecurityIdentity`. Verify identity propagates to worker threads. Requires `quarkus-security` test infrastructure (`@TestSecurity` or basic auth). Best effort for C3 — if the agentic test module doesn't already have security test dependencies, defer to a follow-up.
 
 **4. OTel span continuity (best effort)** — `@ParallelAgent` invoked inside a traced context. Assert sub-agent spans share the parent trace ID using `InMemorySpanExporter`. Full OTel test infrastructure lands in C4.
 
