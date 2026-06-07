@@ -73,10 +73,56 @@ public interface ExecutorServiceProvider {
 }
 ```
 
-Modify `DefaultExecutorProvider` to check static override first, then `ServiceLoader`, then fall back to `newVirtualThreadPerTaskExecutor()`:
-- Static setter: `DefaultExecutorProvider.setDefaultExecutorService(ExecutorService executorService)`
-- The static override field must be `volatile` (concurrent reads from agent worker threads)
-- `ServiceLoader` discovery is cached in the lazy holder (runs once on first access, not per-call)
+Modified `DefaultExecutorProvider` — three-tier priority (volatile override → lazy ServiceLoader → virtual thread fallback):
+
+```java
+package dev.langchain4j.internal;
+
+import static dev.langchain4j.internal.VirtualThreadUtils.createVirtualThreadExecutor;
+
+import dev.langchain4j.Internal;
+import dev.langchain4j.spi.ExecutorServiceProvider;
+import java.util.ServiceLoader;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.SynchronousQueue;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+
+@Internal
+public class DefaultExecutorProvider {
+
+    private static volatile ExecutorService override;
+
+    private DefaultExecutorProvider() {}
+
+    public static void setDefaultExecutorService(ExecutorService executorService) {
+        override = executorService;
+    }
+
+    public static ExecutorService getDefaultExecutorService() {
+        ExecutorService result = override;
+        if (result != null) {
+            return result;
+        }
+        return Holder.EXECUTOR_SERVICE;
+    }
+
+    private static class Holder {
+        private static final ExecutorService EXECUTOR_SERVICE = loadExecutorService();
+
+        private static ExecutorService loadExecutorService() {
+            for (ExecutorServiceProvider provider : ServiceLoader.load(ExecutorServiceProvider.class)) {
+                return provider.get();
+            }
+            return createVirtualThreadExecutor(Holder::createPlatformThreadExecutorService);
+        }
+
+        private static ExecutorService createPlatformThreadExecutorService() {
+            return new ThreadPoolExecutor(0, Integer.MAX_VALUE, 1, TimeUnit.SECONDS, new SynchronousQueue<>());
+        }
+    }
+}
+```
 
 **2. Quarkus (`agentic/runtime`)** — one recorder method:
 - `AgenticRecorder.registerDefaultExecutorProvider()` at `@RuntimeInit`
