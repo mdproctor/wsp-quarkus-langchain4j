@@ -297,6 +297,9 @@ Agent configuration no longer requires static supplier methods. `ContentRetrieve
 **What this delivers**  
 Every agent invocation appears as a named OTel span, nested correctly under its parent. Micrometer counters and timers exist for agent invocations, errors, duration, and tool executions. A `@Readiness` health check reports agent availability. CDI events fire at agent lifecycle boundaries. Dev UI uses structured JSON instead of opaque HTML.
 
+**Upstream context**  
+Upstream `langchain4j-agentic` provides the `AgentListener` SPI and `AgentMonitor` (in-memory execution tree + HTML report generator) but zero production observability implementations — no OTel spans, no metrics, no health checks, no event bridge. This chapter is purely a Quarkus integration layer: CDI `AgentListener` beans that plug into the upstream SPI with Quarkus-native observability. Tool execution spans are deliberately excluded — the core module's `ToolSpanWrapper` already creates `langchain4j.tools.*` spans at the AI service level, and these nest correctly under agent spans via OTel context propagation (C3's `ManagedExecutor` wiring).
+
 **Accountability gaps closed**
 - No distributed trace visibility at agent boundaries → L3
 - No alertable metrics for agent failure rate or latency → L3
