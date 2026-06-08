@@ -73,7 +73,8 @@ C4Context
 ### Chapter sequencing rationale
 
 - C1 before all: establishes safe baseline; security fix (D-2) must ship before any feature work
-- C2 before C4, C5: `AgentListener` CDI auto-discovery (L1) is required by OTel listener (L3) and guardrail listener (L4)
+- C2 before C4: `AgentListener` CDI auto-discovery (L1) is required by OTel listener (L3)
+- C5 independent: guardrails use the inner AiServices SPI path, not AgentListener — no C2 dependency
 - C3 before C4: context propagation (L2) required before OTel spans are meaningful on worker threads
 - C2 and C3 independent: can be developed in parallel, merged in either order
 - C6 independent: configuration namespace touches no other layer
@@ -100,7 +101,7 @@ C4Container
     Container(cfg, "LangChain4jAgentConfig", "ConfigMapping", "quarkus.langchain4j.agent.* namespace")
   }
   Container_Boundary(l4, "L4: Guardrails") {
-    Container(gl, "AgentGuardrailListener", "AgentListener CDI bean", "Runs input/output guardrails at agent boundaries")
+    Container(gl, "AiServicesProcessor SPI chain", "Build-time metadata + runtime SPI", "Wires @InputGuardrails/@OutputGuardrails to agent inner AiServices via QuarkusClassMetadataProviderFactory")
   }
   Container_Boundary(l3, "L3: Observability") {
     Container(otel, "AgentSpanListener", "AgentListener CDI bean", "Opens OTel spans per agent invocation")
@@ -128,17 +129,17 @@ C4Dynamic
 
   Person(caller, "Caller")
   Container(agent, "Agent CDI proxy", "ApplicationScoped")
-  Container(listener, "Listener chain", "CDI beans: span + metrics + guardrail")
+  Container(listener, "Listener chain", "CDI beans: span + metrics + events")
   Container(planner, "PlannerLoop", "langchain4j-agentic")
   Container(executor, "ManagedExecutor", "MicroProfile CP")
   Container(sub, "Sub-agent CDI bean", "ApplicationScoped")
 
   Rel(caller, agent, "1. invoke method")
-  Rel(agent, listener, "2. beforeAgentInvocation (input guardrail, span open, metric start)")
+  Rel(agent, listener, "2. beforeAgentInvocation (span open, metric start)")
   Rel(listener, planner, "3. delegate to planner")
   Rel(planner, executor, "4. parallel tasks submitted with context")
   Rel(executor, sub, "5. sub-agent invoked with CDI + OTel + Security context")
-  Rel(sub, listener, "6. afterAgentInvocation (output guardrail, span close, metric record)")
+  Rel(sub, listener, "6. afterAgentInvocation (span close, metric record)")
   Rel(listener, caller, "7. result returned")
 ```
 
@@ -197,7 +198,7 @@ Standard Quarkus deployment — JVM or GraalVM native. No agentic-specific infra
 | C2 | CDI-Native Agents | L1 | High | 🔄 | S-1, S-2, O-3, A-1 partial |
 | C3 | Parallel Safety | L2 | High | 🔄 | C-1, C-2, C-3, C-4 |
 | C4 | Observable Agents | L3, L7 | High, Med | 🔲 | O-1, O-2, O-4, O-5, D-4, O-6 |
-| C5 | Guarded Agents | L4 | High | 🔲 | A-2, G-1 |
+| C5 | Guarded Agents | L4 | High | ✅ | A-2 (partial), G-1 |
 | C6 | Configurable Agents | L5 | Medium | 🔲 | L-1, L-2, L-3 |
 | C7 | Resilient Agents | L6 | High | 🔲 | F-2, F-6 — upstream PRs required |
 | C8 | Persistent Agents | L8 (new) | High | 🔲 | A-7, L-4 |
@@ -218,7 +219,7 @@ Standard Quarkus deployment — JVM or GraalVM native. No agentic-specific infra
 **Sequencing rationale:**
 - C1 before all: D-2 (security) must ship before any other feature work
 - C2 before C4: `AgentListener` CDI discovery (L1) required by OTel/metrics listeners (L3)
-- C2 before C5: guardrail listener (L4) is an `AgentListener` CDI bean
+- C5 independent: guardrails use AiServicesProcessor SPI chain, not AgentListener (updated at C5 close)
 - C3 before C4: context propagation (L2) required before OTel spans are meaningful on worker threads
 - C2 and C3 independent: can develop in parallel
 - C6 independent: no layer dependencies
@@ -312,15 +313,14 @@ Every agent invocation appears as a named OTel span, nested correctly under its 
 
 #### Chapter 5 — Guarded Agents
 
-**Journey:** J1 | **Sequence:** 5 of 8 | **Status:** 🔲  
-**Depends on:** C2 | **Issues:** 🔲 | **Blog:** 🔲
+**Journey:** J1 | **Sequence:** 5 of 8 | **Status:** ✅  
+**Depends on:** none (independent) | **Issues:** 🔲 | **Blog:** 🔲
 
 **What this delivers**  
-`@InputGuardrails` and `@OutputGuardrails` annotations are detected on agent interface methods at build time and wired via the `AgentListener` pipeline. Agent inputs can be validated or rewritten before the LLM call; agent outputs can be validated or trigger reprompting — using the same guardrail CDI bean API that AI services already support.
+`@InputGuardrails`/`@OutputGuardrails` on agent interface methods work — same annotations, same CDI beans, same behaviour as on AiServices. Build-time validation, CDI resolution, `maxRetries` config, and reprompting all work. No production code changes; 8 tests verify the behaviour.
 
 **Accountability gaps closed**
-- No input/output safety validation at agent boundaries → L4
-- Prompt injection and PII leakage undetectable at agent level → L4
+- LLM-level input/output validation on agent LLM calls → L4
 
 **Layer Impact**
 | Layer | Delta |
@@ -393,7 +393,7 @@ Agent scope state (`AgenticScope`) survives pod restarts and spans multiple node
 
 ### Layer — L1: CDI Foundation
 
-**Participates in chapters:** C2, C5, C8  
+**Participates in chapters:** C2, C8 (C5 uses L1 indirectly via AiServicesProcessor SPI chain, not via direct AgentListener wiring)  
 **Architectural patterns:** Synthetic Bean, CDI auto-discovery, SPI extension  
 **Key protocols:** 🔲  
 **Completed:** 🔲
@@ -409,7 +409,7 @@ What this layer adds:
 - **AgentListener CDI discovery** — unconditional `Instance<AgentListener>` injection point on every agent; runtime iterates and calls `agentBuilder.listener()` for each; unblocks O-1, O-2, A-2, L8 listener wiring
 - **Qualifier-aware `@CdiBean` resolution** — extracts qualifier annotations from parameters before `Arc.container().select(type, qualifiers)`; prevents `AmbiguousResolutionException` with named models
 
-Not closed here: L2 (context propagation on worker threads), L4 (guardrail wiring).
+Not closed here: L2 (context propagation on worker threads). L4 (guardrails) closed by C5 — uses AiServicesProcessor SPI chain, not L1 AgentListener wiring.
 
 #### Key files
 🔲 at C2 close
@@ -479,7 +479,7 @@ What this layer adds:
 - **CDI event bridge** — `AgentCdiEventListener` fires typed CDI events; enables user code to observe agent lifecycle without implementing `AgentListener`
 - **Readiness probe** — `AgentHealthCheck` (@Readiness) resolves root agent CDI beans; reports DOWN if any fail
 
-Not closed here: L4 (guardrails), L6 (retry safety).
+Not closed here: L6 (retry safety). L4 (guardrails) closed by C5.
 
 #### Key files
 🔲 at C4 close
@@ -495,30 +495,22 @@ Not closed here: L4 (guardrails), L6 (retry safety).
 ### Layer — L4: Guardrails
 
 **Participates in chapters:** C5  
-**Architectural patterns:** CDI auto-discovered AgentListener, build-time annotation detection  
-**Key protocols:** `core/GuardrailsSupport` — follow existing guardrail wiring pattern  
-**Completed:** 🔲
+**Completed:** ✅
 
 #### What it adds
 
-**Before:** No input or output validation at agent boundaries. `@ErrorHandler` (static method) is the only failure hook — fires after failure, cannot modify inputs, cannot reprompt, cannot access CDI beans.
+`@InputGuardrails`/`@OutputGuardrails` work on agent interfaces — same as on AiServices. Agents are processed as AiServices via `AnnotationsImpliesAiServiceBuildItem`, so guardrail metadata, build-time validation, CDI resolution, and `maxRetries` config are all handled by the existing `AiServicesProcessor` pipeline. No production code changes; 8 tests verify the behaviour.
 
-**After:** `AgenticProcessor` detects `@InputGuardrails`/`@OutputGuardrails` on agent interface methods at build time. An `AgentGuardrailListener` CDI bean runs the guardrail chain in `beforeAgentInvocation` (input) and `afterAgentInvocation` (output), using the same `GuardrailsSupport` infrastructure as AI services.
-
-What this layer adds:
-- **Build-time guardrail detection** — `AgenticProcessor @BuildStep` detects `@InputGuardrails`/`@OutputGuardrails` on agent methods; validates guardrail CDI bean types exist
-- **AgentGuardrailListener** — CDI `AgentListener` bean that executes the guardrail chain; reuses `GuardrailsSupport` from `core/runtime`; injects guardrail CDI beans by type from detected annotations
-
-Not closed here: L6 (retry scope safety — complementary resilience concern).
+Not closed here: agent-boundary guardrails (typed method I/O validation). L6 (retry scope safety).
 
 #### Key files
-🔲 at C5 close
+- Tests: `agentic/deployment/src/test/java/.../AgentInputGuardrailTest.java` (+ 7 others)
 
 #### Gotchas
-🔲 at C5 close
+None.
 
 #### Pattern to replicate
-🔲 at C5 close
+Annotations that should work on agent interfaces via the AiService processing path need to be covered by `AnnotationsImpliesAiServiceBuildItem`.
 
 ---
 
@@ -639,7 +631,9 @@ write-once build-time data.
 
 ### ADR-0002 — `AgentListener` CDI auto-discovery as the primary extension point
 
-**Why `AgentListener` rather than CDI interceptors:** interceptors apply to the CDI proxy boundary (the method call), not to the agent execution lifecycle (which includes planner iterations, sub-agent delegation, tool execution). `AgentListener` fires at the correct granularity for OTel spans, metrics, and guardrails. CDI interceptors remain valid for cross-cutting method-level concerns (e.g., `@RolesAllowed`, `@Timeout`).
+**Why `AgentListener` rather than CDI interceptors:** interceptors apply to the CDI proxy boundary (the method call), not to the agent execution lifecycle (which includes planner iterations, sub-agent delegation, tool execution). `AgentListener` fires at the correct granularity for OTel spans and metrics. CDI interceptors remain valid for cross-cutting method-level concerns (e.g., `@RolesAllowed`, `@Timeout`).
+
+**Note (updated at C5):** Guardrails do NOT use `AgentListener`. They fire on the agent's inner LLM calls via the `AiServicesProcessor` SPI chain (`QuarkusClassMetadataProviderFactory` → `GuardrailServiceBuilder`). `InputGuardrail.validate(UserMessage)` operates on LLM-level types, not the `AgentRequest(agenticScope, agent, inputs)` types that `AgentListener` receives. The abstraction levels are different.
 
 **Tradeoff:** requires upstream `langchain4j-agentic` to maintain the `AgentListener` SPI as a stable extension point. If upstream removes or renames it, all L3/L4 wiring breaks. Monitor upstream beta releases.
 
@@ -653,7 +647,7 @@ write-once build-time data.
 | Safety | No unauthenticated reflection in Dev UI | After C1 |
 | CDI correctness | `@RequestScoped` beans usable in parallel agent tools | After C3 |
 | Production readiness | Agent failure visible in health check | After C4 |
-| Guardrail parity | Same guardrail API for agents as for AI services | After C5 |
+| Guardrail parity | Same guardrail API for agents as for AI services | ✅ C5 (LLM-level; agent-boundary guardrails deferred) |
 
 ---
 

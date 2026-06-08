@@ -56,40 +56,15 @@ support is the next layer of work.
 
 ---
 
-### A-2 · Guardrails: complete parallel absence — the entire CDI guardrail system is unreachable
+### A-2 · Guardrails on agents
 
-**Verified source**: `ide_search_text` for "guardrail" in `agentic/` → **zero hits**.
+**Status:** ✅ Closed (C5)
 
-The `quarkus-langchain4j-core` module has a rich, production-grade CDI guardrail system:
+`@InputGuardrails`/`@OutputGuardrails` work on agent interfaces — same annotations, same CDI beans, same behaviour as on AiServices. Build-time validation, CDI resolution, `maxRetries` config, and reprompting all work. No production code changes; 8 tests verify the behaviour.
 
-| Core module guardrail | Purpose | Applied via |
-|---|---|---|
-| `InputGuardrail` | Validate/rewrite the prompt before the LLM call | `@InputGuardrails({...})` on AI service method |
-| `OutputGuardrail` | Validate/reprompt the LLM response; retry | `@OutputGuardrails({...})` on AI service method |
-| `ToolInputGuardrail` | Validate tool call arguments before execution | `@ToolInputGuardrails({...})` on `@Tool` method |
-| `ToolOutputGuardrail` | Validate/modify tool results before returning | `@ToolOutputGuardrails({...})` on `@Tool` method |
+Agent-boundary guardrails (validating typed method inputs/outputs rather than LLM messages) are out of scope — different abstraction level, would require new types.
 
-All are CDI beans (`@ApplicationScoped`, `@RequestScoped`) with injection, metrics, CDI events,
-chain semantics, reprompting, streaming support, and full test coverage.
-
-The agent layer currently has no access to this infrastructure. There is no way to:
-- Validate or sanitise inputs to an agent call
-- Validate the output of a sub-agent before passing it to the next agent
-- Reprompt an agent when its output fails a business rule
-- Apply security/PII filters at agent boundaries
-
-The `@ErrorHandler` static method is a narrower mechanism — it fires only after a failure,
-cannot modify inputs, cannot reprompt, and cannot access CDI beans.
-
-\*\*Quarkus fix\*\*: `AgenticProcessor` needs `@BuildStep` support to detect
-`@InputGuardrails`/`@OutputGuardrails` on agent interfaces and wire them via
-`QuarkusAgenticContextConsumer` into the `AgentConfigurator`. The guardrail CDI discovery
-and execution infrastructure already exists in `GuardrailsSupport`.
-
-**Impact**: 5 — safety and correctness feature, not optional for production use
-**Effort**: 3
-**API change**: No (additive — same `@InputGuardrails` annotation users already know)
-**Risk**: Low
+**Impact**: 3 | **Effort**: 0 | **API change**: No | **Risk**: Low
 
 ---
 
@@ -591,7 +566,7 @@ Full `@CdiBean` support for non-chat suppliers requires an upstream `Declarative
 | ID | Finding | Theme | Impact | Effort | API | Risk | Priority |
 |----|---------|-------|--------|--------|-----|------|----------|
 | A-7 | `AgenticScopeStore` has no Quarkus impl — persistent scope falls back to in-memory | Parallel | 5 | 4 | No | Low | **Critical** |
-| A-2 | Guardrails completely absent | Parallel | 5 | 3 | No | Low | **Critical** |
+| A-2 | Guardrails on agents ✅ (C5) | Parallel | 3 | 0 | No | Low | **Closed** |
 | F-2 | `@Retry` silently corrupts `AgenticScope` state | FT | 5 | 4 | No | High | **Critical** |
 | D-2 | `invokeAgent` accepts arbitrary class names without allow-list validation | DevUI | 5 | 2 | No | High | **Critical** |
 | F-5 | `@Transactional` + scope diverge silently | FT | 4 | 1 | No | High | **Fix now** |
@@ -669,7 +644,7 @@ S-2 (qualifier support in `@CdiBean` resolver)
 L-2 (A2A URL config)
 
 **Phase 5 — Guardrails (one sprint):**
-A-2 — wire core module guardrail infrastructure to agent boundaries
+A-2 — ✅ Guardrails work on agents (C5)
 
 **Phase 6 — Persistent state (two sprints):**
 A-7 — `quarkus-langchain4j-agentic-infinispan` + `quarkus-langchain4j-agentic-redis` modules
