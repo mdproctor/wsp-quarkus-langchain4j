@@ -233,8 +233,8 @@ Standard Quarkus deployment — JVM or GraalVM native. No agentic-specific infra
 
 #### Chapter 1 — Quick Wins & Safety
 
-**Journey:** J1 | **Sequence:** 1 of 8 | **Status:** 🔲  
-**Issues:** 🔲 | **Blog:** 🔲
+**Journey:** J1 | **Sequence:** 1 of 8 | **Status:** ✅  
+**Epic:** [#2549](https://github.com/quarkiverse/quarkus-langchain4j/issues/2549) | **Issue:** [#2545](https://github.com/quarkiverse/quarkus-langchain4j/issues/2545) | **Blog:** 🔲
 
 **What this delivers**  
 The Dev UI `invokeAgent` endpoint is protected against arbitrary class loading. Build-time warnings fire when `@Retry`, `@Transactional`, or `@Fallback(fallbackMethod=...)` are used unsafely on agent interfaces. Inherited interceptor bindings are detected correctly. Seven one-line fixes land as a single low-risk PR.
@@ -255,7 +255,7 @@ The Dev UI `invokeAgent` endpoint is protected against arbitrary class loading. 
 #### Chapter 2 — CDI-Native Agents
 
 **Journey:** J1 | **Sequence:** 2 of 8 | **Status:** 🔄 implemented, PR pending  
-**Issues:** 🔲 | **Blog:** 🔲 | **Branch:** `c2-cdi-native-agents`
+**Epic:** [#2549](https://github.com/quarkiverse/quarkus-langchain4j/issues/2549) | **Issue:** [#2546](https://github.com/quarkiverse/quarkus-langchain4j/issues/2546) | **Blog:** 🔲 | **Branch:** `c2-cdi-native-agents`
 
 **What this delivers**  
 Agent configuration no longer requires static supplier methods. `ContentRetriever`, `ChatMemory`, `ChatMemoryProvider`, and `RetrievalAugmentor` CDI beans are automatically wired into any agent that does not declare a static supplier for that type (build-time detection via `BeanDiscoveryFinishedBuildItem`, runtime wiring via `Instance<T>` injection points). `AgentListener` CDI beans are auto-discovered globally and compose additively with per-agent `@AgentListenerSupplier`. `@CdiBean` parameter resolver gains qualifier support (S-2). `@RequestScoped`/`@SessionScoped` beans rejected at build time.
@@ -273,7 +273,7 @@ Agent configuration no longer requires static supplier methods. `ContentRetrieve
 #### Chapter 3 — Parallel Safety
 
 **Journey:** J1 | **Sequence:** 3 of 8 | **Status:** 🔄 implemented, PR pending  
-**Issues:** 🔲 | **Blog:** 🔲 | **Branch:** `c3-parallel-safety`
+**Epic:** [#2549](https://github.com/quarkiverse/quarkus-langchain4j/issues/2549) | **Issue:** [#2547](https://github.com/quarkiverse/quarkus-langchain4j/issues/2547) | **Blog:** 🔲 | **Branch:** `c3-parallel-safety`
 
 **What this delivers**  
 `@ParallelAgent` execution propagates CDI context, OTel spans, and `SecurityIdentity` to sub-agent worker threads. A Quarkus `ManagedExecutor` replaces `DefaultExecutorProvider`'s raw virtual-thread executor as the default. `@RequestScoped` beans used in agent tools no longer throw `ContextNotActiveException` in parallel scenarios.
@@ -291,8 +291,8 @@ Agent configuration no longer requires static supplier methods. `ContentRetrieve
 
 #### Chapter 4 — Observable Agents
 
-**Journey:** J1 | **Sequence:** 4 of 8 | **Status:** 🔲  
-**Depends on:** C2, C3 | **Issues:** 🔲 | **Blog:** 🔲
+**Journey:** J1 | **Sequence:** 4 of 8 | **Status:** 🔄 implemented, PR pending  
+**Depends on:** C2, C3 | **Epic:** [#2549](https://github.com/quarkiverse/quarkus-langchain4j/issues/2549) | **Issue:** [#2548](https://github.com/quarkiverse/quarkus-langchain4j/issues/2548) | **Blog:** 🔲
 
 **What this delivers**  
 Every agent invocation appears as a named OTel span, nested correctly under its parent. Micrometer counters and timers exist for agent invocations, errors, duration, and tool executions. A `@Readiness` health check reports agent availability. CDI events fire at agent lifecycle boundaries. Dev UI uses structured JSON instead of opaque HTML.
