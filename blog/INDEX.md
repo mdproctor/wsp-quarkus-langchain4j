@@ -7,3 +7,5 @@
 | [2026-06-05-mdp03-infrastructure-and-protocols.md](2026-06-05-mdp03-infrastructure-and-protocols.md) | 2026-06-05 | Infrastructure, Protocols, and a Proper Maven Fix |
 | [2026-06-05-mdp04-cdi-native-agents.md](2026-06-05-mdp04-cdi-native-agents.md) | 2026-06-05 | CDI-Native Agents — Build-Time Auto-Wiring for Agentic Suppliers |
 | [2026-06-07-mdp05-parallel-safety.md](2026-06-07-mdp05-parallel-safety.md) | 2026-06-07 | When You Can't Shadow a JAR Class |
+| [2026-06-08-mdp06-the-chapter-that-wrote-itself.md](2026-06-08-mdp06-the-chapter-that-wrote-itself.md) | 2026-06-08 | The chapter that wrote itself |
+| [2026-06-08-mdp07-the-body-of-work.md](2026-06-08-mdp07-the-body-of-work.md) | 2026-06-08 | The body of work so far |
