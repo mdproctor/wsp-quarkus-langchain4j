@@ -71,6 +71,8 @@ The symlink must always remain unstaged — never run `git add CLAUDE.md` in the
 
 **Never promote specs, plans, ADRs, snapshots, or blog entries to the project repo.** These are workspace artifacts — they would pollute upstream PRs with session methodology content that reviewers don't want and the project repo doesn't own.
 
+**Specs attach to issues, not PRs.** Each chapter issue on quarkiverse carries its design spec in a `<details>` toggle. PRs reference the issue (`Design spec: attached to #N`) — they do not duplicate the spec inline. The epic (#2549) carries ARC42STORIES in a toggle; the audit is linked. When ARC42STORIES is updated, sync the epic body.
+
 ## Structure
 
 - `HANDOFF.md` — session handover (single file, overwritten each session)
