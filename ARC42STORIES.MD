@@ -198,7 +198,7 @@ Standard Quarkus deployment — JVM or GraalVM native. No agentic-specific infra
 | C2 | CDI-Native Agents | L1 | High | 🔄 | S-1, S-2, O-3, A-1 partial |
 | C3 | Parallel Safety | L2 | High | 🔄 | C-1, C-2, C-3, C-4 |
 | C4 | Observable Agents | L3, L7 | High, Med | 🔲 | O-1, O-2, O-4, O-5, D-4, O-6 |
-| C5 | Guarded Agents | L4 | High | 🔲 | A-2, G-1 |
+| C5 | Guarded Agents | L4 | High | ✅ | A-2 (partial), G-1 |
 | C6 | Configurable Agents | L5 | Medium | 🔲 | L-1, L-2, L-3 |
 | C7 | Resilient Agents | L6 | High | 🔲 | F-2, F-6 — upstream PRs required |
 | C8 | Persistent Agents | L8 (new) | High | 🔲 | A-7, L-4 |
@@ -411,7 +411,7 @@ What this layer adds:
 - **AgentListener CDI discovery** — unconditional `Instance<AgentListener>` injection point on every agent; runtime iterates and calls `agentBuilder.listener()` for each; unblocks O-1, O-2, A-2, L8 listener wiring
 - **Qualifier-aware `@CdiBean` resolution** — extracts qualifier annotations from parameters before `Arc.container().select(type, qualifiers)`; prevents `AmbiguousResolutionException` with named models
 
-Not closed here: L2 (context propagation on worker threads), L4 (guardrail wiring).
+Not closed here: L2 (context propagation on worker threads). L4 (guardrails) closed by C5 — uses AiServicesProcessor SPI chain, not L1 AgentListener wiring.
 
 #### Key files
 🔲 at C2 close
@@ -481,7 +481,7 @@ What this layer adds:
 - **CDI event bridge** — `AgentCdiEventListener` fires typed CDI events; enables user code to observe agent lifecycle without implementing `AgentListener`
 - **Readiness probe** — `AgentHealthCheck` (@Readiness) resolves root agent CDI beans; reports DOWN if any fail
 
-Not closed here: L4 (guardrails), L6 (retry safety).
+Not closed here: L6 (retry safety). L4 (guardrails) closed by C5.
 
 #### Key files
 🔲 at C4 close
@@ -662,7 +662,7 @@ write-once build-time data.
 | Safety | No unauthenticated reflection in Dev UI | After C1 |
 | CDI correctness | `@RequestScoped` beans usable in parallel agent tools | After C3 |
 | Production readiness | Agent failure visible in health check | After C4 |
-| Guardrail parity | Same guardrail API for agents as for AI services | After C5 |
+| Guardrail parity | Same guardrail API for agents as for AI services | ✅ C5 (LLM-level; agent-boundary guardrails deferred) |
 
 ---
 
