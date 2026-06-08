@@ -1,0 +1,9 @@
+branch: c5-guarded-agents
+project-sha: 19377df38357b1a652166539c21f4be7f592f572
+date: 2026-06-08
+issue:
+issue-repo:
+covers:
+flyway-next-v: none
+design-repo: workspace
+design-section-hashes:
