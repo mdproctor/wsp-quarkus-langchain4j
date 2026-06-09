@@ -9,3 +9,4 @@
 | [2026-06-07-mdp05-parallel-safety.md](2026-06-07-mdp05-parallel-safety.md) | 2026-06-07 | When You Can't Shadow a JAR Class |
 | [2026-06-08-mdp06-the-chapter-that-wrote-itself.md](2026-06-08-mdp06-the-chapter-that-wrote-itself.md) | 2026-06-08 | The chapter that wrote itself |
 | [2026-06-08-mdp07-the-body-of-work.md](2026-06-08-mdp07-the-body-of-work.md) | 2026-06-08 | The body of work so far |
+| [2026-06-09-mdp01-the-auto-wiring-that-wasnt.md](2026-06-09-mdp01-the-auto-wiring-that-wasnt.md) | 2026-06-09 | The auto-wiring that wasn't |
