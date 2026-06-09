@@ -1,9 +1,9 @@
 # C6 — Configurable Agents Design
 
-**Date:** 2026-06-09 (revised 2026-06-09)
+**Date:** 2026-06-09 (revised 2026-06-09, iteration 3)
 **Chapter:** 6 of 8 — Configurable Agents
 **Layer:** L5 (Configuration)
-**Status:** Approved (revised after review)
+**Status:** Approved (revised after two review rounds)
 
 ---
 
@@ -47,22 +47,25 @@ File on `langchain4j/langchain4j` before C6 implementation begins:
 
 ## Config Structure
 
-Two separate `@ConfigRoot` interfaces — agent runtime config and dev UI config are distinct concerns.
-
-### AgenticRuntimeConfig (agent runtime)
+Single `@ConfigRoot` following the established repo pattern: two `@WithParentName` entries (default + named map with `@WithDefaults`) plus fixed-name siblings — same pattern as `LangChain4jBuildConfig` (`defaultConfig` + `namedConfig` + `devservices`).
 
 ```java
 @ConfigRoot(phase = ConfigPhase.RUN_TIME)
 @ConfigMapping(prefix = "quarkus.langchain4j.agent")
 public interface AgenticRuntimeConfig {
 
-    /** Global default max iterations for loop agents. */
-    Optional<Integer> defaultMaxIterations();
-
-    /** Per-agent configuration, keyed by agent name. */
+    /** Default agent config — values inherited by all named agents via @WithDefaults. */
     @WithParentName
+    AgentConfig defaultConfig();
+
+    /** Per-agent configuration, keyed by resolved agent name. */
+    @WithParentName
+    @WithDefaults
     @ConfigDocMapKey("agent-name")
     Map<String, AgentConfig> namedConfig();
+
+    /** Dev UI configuration. Reserved name — 'dev-ui' cannot be used as an agent name. */
+    DevUiConfig devUi();
 
     interface AgentConfig {
         /** Override maxIterations for a @LoopAgent. */
@@ -70,68 +73,79 @@ public interface AgenticRuntimeConfig {
 
         /**
          * Override maxAgentsInvocations for a @SupervisorAgent.
-         * NOTE: declared but not wired in C6 — requires upstream
-         * supervisor builder SPI or workflow-level AgentConfigurator.
+         * Declared but not wired in C6 — requires upstream supervisor builder SPI
+         * or workflow-level AgentConfigurator.
          */
         Optional<Integer> maxAgentsInvocations();
 
         /** Override the A2A server URL for an @A2AClientAgent. */
         Optional<String> a2aServerUrl();
     }
-}
-```
 
-### AgenticDevUiConfig (dev tooling — separate concern)
-
-```java
-@ConfigRoot(phase = ConfigPhase.RUN_TIME)
-@ConfigMapping(prefix = "quarkus.langchain4j.agent.dev-ui")
-public interface AgenticDevUiConfig {
-
-    /**
-     * Whether to eagerly initialise root agents at startup in dev mode.
-     * Set to false in CI environments to avoid unnecessary agent startup latency.
-     */
-    @WithDefault("true")
-    boolean eagerInit();
+    interface DevUiConfig {
+        /**
+         * Whether to eagerly initialise root agents at startup in dev mode.
+         * Set to false in CI environments to avoid unnecessary agent startup latency.
+         */
+        @WithDefault("true")
+        boolean eagerInit();
+    }
 }
 ```
 
 ### Usage
 
 ```properties
-# Global default
-quarkus.langchain4j.agent.default-max-iterations=10
+# Global defaults (unnamed entry — inherited by all agents via @WithDefaults)
+quarkus.langchain4j.agent.max-iterations=10
 
 # Per-agent overrides (keyed by resolved agent name)
 quarkus.langchain4j.agent."story-loop".max-iterations=20
 quarkus.langchain4j.agent."remote-writer".a2a-server-url=https://prod.example.com
 
-# Dev UI (separate namespace, no collision)
+# Dev UI (fixed-name sibling, not a map entry — same pattern as devservices() in core)
 quarkus.langchain4j.agent.dev-ui.eager-init=false
 ```
 
 ### Config key resolution
 
-The config key is the **resolved agent name** — the `name` attribute from the upstream annotation if set, otherwise the method name kebab-cased (e.g. `generateStory` → `generate-story`). Extracted at build time. Uniqueness validated across all agentic methods across all interfaces in the application — two interfaces with `@LoopAgent(name="story")` on different methods fail validation.
+The config key is the **resolved agent name** — the `name` attribute from the upstream annotation if set, otherwise the method name kebab-cased (e.g. `generateStory` → `generate-story`). Extracted at build time. Uniqueness validated across all agentic methods across all interfaces in the application — two interfaces with methods resolving to the same config key fail validation.
+
+### Reserved names
+
+`dev-ui` is a reserved config key (maps to `DevUiConfig`). Build-time validation rejects agents named `dev-ui`. This follows the same pattern as `devservices` in `LangChain4jBuildConfig` — SmallRye Config resolves fixed-name methods before map entries, so there is no ghost entry in the named map.
 
 ## Component 1 — ConfigAwareWorkflowAgentsBuilder (maxIterations override)
 
 **Purpose:** Override `maxIterations` for loop agents from Quarkus config.
 
-**Registration:** `AgenticRecorder.registerWorkflowAgentsBuilder(Map<String, String> classNameToConfigKey)` at `@RuntimeInit` calls `AgenticServices.setWorkflowAgentsBuilder()`. The `classNameToConfigKey` map is populated at build time from `DetectedAiAgentBuildItem` — no static registry.
+**Registration:** `AgenticRecorder.registerWorkflowAgentsBuilder(AgenticRuntimeConfig, Map<String, String> classNameToConfigKey)` at `@RuntimeInit` calls `AgenticServices.setWorkflowAgentsBuilder()`. The `classNameToConfigKey` map is populated at build time from `DetectedAiAgentBuildItem` — no static registry. Both the config and the map are threaded directly into the wrapper at construction time.
 
-**Timing (explicit):**
-1. Our `loopBuilder(Class<T> agentServiceClass)` creates a `ConfigAwareLoopBuilder` wrapping the real `LoopAgentService`, storing the class and config reference
-2. Upstream's `buildLoopAgent()` calls `.maxIterations(annotation.maxIterations())` on our wrapper → delegated to the real builder (annotation value set)
-3. Upstream calls `.build()` on our wrapper → our wrapper calls `delegate.maxIterations(configValue)` to override, then calls `delegate.build()`
+### Timing (explicit)
 
-The override works because `maxIterations()` is a builder-style setter — calling it again replaces the previous value. The `Class<T> agentServiceClass` parameter received in `loopBuilder()` is the original agent interface class (not a proxy), which is used to look up the config key from the threaded map.
+1. `loopBuilder(Class<T> agentServiceClass)` → wrapper intercepts, creates real `LoopAgentServiceImpl` via delegate; constructor calls `configureLoop()` which reads `@ExitCondition` and calls `buildAgentFeatures()` — does **NOT** read `maxIterations`; `maxIterations` field starts at `Integer.MAX_VALUE`
+2. Upstream's `buildLoopAgent()` calls `.subAgents(...)`, `.maxIterations(annotation.maxIterations())` on our wrapper → each call delegates to the real builder AND returns `this` (wrapper); annotation value replaces `MAX_VALUE`
+3. `.build()` → wrapper calls `delegate.maxIterations(configValue)` to override (guaranteed last write), then calls `delegate.build()`
 
-**Config resolution order:**
+### Fluent chain decorator contract
+
+**Critical:** The wrapper must return `this` from every fluent method to prevent chain escape. If any method returns the delegate's return value, subsequent calls bypass the wrapper and the config override in `build()` never fires.
+
+`ConfigAwareLoopBuilder<T>` implements `LoopAgentService<T>` — full decorator:
+
+- **From `AgenticService` (parent):** `subAgents(Object...)`, `subAgents(Collection)`, `beforeCall(Consumer)`, `name(String)`, `description(String)`, `outputKey(String)`, `outputKey(Class)`, `output(Function)`, `errorHandler(Function)`, `listener(AgentListener)` — 10 fluent methods
+- **From `LoopAgentService`:** `maxIterations(int)`, `exitCondition` (4 overloads), `testExitAtLoopEnd(boolean)` — 6 fluent methods
+- **`build()`** — applies config override, then delegates
+
+Total: 16 delegate-and-return-`this` methods + 1 `build()` with override. Each fluent method is one line: `delegate.method(args); return this;`
+
+### Config resolution order
+
 1. Per-agent named config: `quarkus.langchain4j.agent."story-loop".max-iterations`
-2. Global default: `quarkus.langchain4j.agent.default-max-iterations`
+2. Default config (inherited via `@WithDefaults`): `quarkus.langchain4j.agent.max-iterations`
 3. Annotation value (upstream default)
+
+With the `@WithDefaults` pattern, resolution of levels 1 and 2 is handled automatically by SmallRye Config — the named entry inherits from the default. The wrapper checks `namedConfig().get(configKey).maxIterations()` which already reflects the inheritance.
 
 **Temporary:** Removed when upstream provides workflow-level `AgentConfigurator`. Javadoc and code comments reference the upstream issue number.
 
@@ -144,9 +158,12 @@ The override works because `maxIterations()` is a builder-style setter — calli
 
 **Purpose:** Override A2A server URLs from Quarkus config, with config expression support.
 
-**Registration:** `AgenticRecorder.registerConfigAwareA2AService(Map<String, String> classNameToConfigKey)` at `@RuntimeInit`. Grabs the current `A2AService.get()`, wraps it, sets `A2AService.Provider.a2aService` via reflection (field is package-private, no public setter exists). The `classNameToConfigKey` map is the same one passed to the workflow builder.
+**Registration:** `AgenticRecorder.registerConfigAwareA2AService(AgenticRuntimeConfig, Map<String, String> classNameToConfigKey)` at `@RuntimeInit`. Grabs the current `A2AService.get()`, wraps it, sets `A2AService.Provider.a2aService` via reflection (field is package-private, no public setter exists). The `classNameToConfigKey` map is the same one passed to the workflow builder.
 
-**URL resolution order (highest to lowest priority):**
+**No fluent chain issue:** `ConfigAwareA2AService` intercepts `a2aBuilder(url, class)` and resolves the URL *before* creating the builder. The returned `A2AClientBuilder` is the real one — no wrapper around a fluent chain.
+
+### URL resolution order (highest to lowest priority)
+
 1. Per-agent named config: `quarkus.langchain4j.agent."remote-writer".a2a-server-url`
 2. Config expression in annotation: `@A2AClientAgent(a2aServerUrl = "${remote.agent.url}")` → resolved via `ConfigProvider.getConfig().getValue("remote.agent.url", String.class)`
 3. Raw annotation value: `@A2AClientAgent(a2aServerUrl = "http://localhost:8080")`
@@ -163,11 +180,11 @@ Config expression detection: check if the annotation value matches `${...}` patt
 
 **Registration:** ServiceLoader via `META-INF/services/org.a2aproject.sdk.client.http.A2AHttpClientProvider`. Native image: `ServiceProviderBuildItem` registered in the deployment processor.
 
-**Implementation:**
+### Implementation
 
 `VertxA2AHttpClientProvider`:
-- Constructor does nothing (provider is instantiated during `A2AHttpClientFactory` static init, before CDI is available)
-- `create()` resolves `Vertx` from `Arc.container().instance(Vertx.class).get()` — called later at agent creation time when CDI IS wired
+- Constructor does nothing — provider is instantiated during `A2AHttpClientFactory` static init (which collects `PROVIDERS` via `ServiceLoader.load(...).stream().collect(toList())`), before CDI is available
+- `create()` resolves `Vertx` from `Arc.container().instance(Vertx.class).get()` — called later at agent creation time (from `DefaultA2AClientBuilder` constructor) when CDI IS wired
 - `priority()` returns 100 (wins over `JdkA2AHttpClientProvider` at priority 0)
 
 `VertxA2AHttpClient` implements `A2AHttpClient` using Vert.x `WebClient`:
@@ -183,24 +200,29 @@ Addresses ARC42STORIES item "A2A calls block Vert.x event loop" — Vert.x WebCl
 
 **Agent name extraction (`AgenticProcessor`):** New `@BuildStep` after agent detection. For each `DetectedAiAgentBuildItem`, extract the config key from the root agentic method's annotation `name` attribute. If `name` is empty/default, derive from method name, kebab-cased.
 
-**Validations:**
+### Validations
+
 - **Duplicate config keys** — across ALL agentic methods across ALL interfaces. Two interfaces with methods resolving to the same config key → build failure naming both interfaces and methods
-- **Config references non-existent agent** — build-time warning if `quarkus.langchain4j.agent."foo".max-iterations=10` doesn't match any detected agent name
+- **Reserved names** — agent name `dev-ui` rejected at build time (reserved for `DevUiConfig`)
+- **Config references non-existent agent** — build-time warning if `quarkus.langchain4j.agent."foo".max-iterations=10` doesn't match any detected agent name (excluding reserved names)
 
-**Data threading:** The `Map<String, String>` of `className → configKey` is passed directly to the recorder methods that create the wrappers. Both `registerWorkflowAgentsBuilder()` and `registerConfigAwareA2AService()` receive the same map. No static registry.
+### Data threading
 
-**Native image:** `ServiceProviderBuildItem` for `VertxA2AHttpClientProvider` registered in the deployment processor.
+The `Map<String, String>` of `className → configKey` is passed directly to the recorder methods that create the wrappers. Both `registerWorkflowAgentsBuilder()` and `registerConfigAwareA2AService()` receive the same map alongside the `AgenticRuntimeConfig` reference. No static registry.
+
+### Native image
+
+`ServiceProviderBuildItem` for `VertxA2AHttpClientProvider` registered in the deployment processor.
 
 ## Permanence Summary
 
 | Component | Permanent? | Removal trigger |
 |-----------|-----------|-----------------|
-| `AgenticRuntimeConfig` expansion | Yes | — |
-| `AgenticDevUiConfig` (separated) | Yes | — |
+| `AgenticRuntimeConfig` (restructured) | Yes | — |
 | `AgentConfig` interface | Yes | — |
 | Build-time name extraction + validation | Yes | — |
 | `ConfigAwareWorkflowAgentsBuilder` | **Temporary** | Upstream workflow-level AgentConfigurator |
-| `ConfigAwareLoopBuilder` | **Temporary** | Upstream workflow-level AgentConfigurator |
+| `ConfigAwareLoopBuilder` (16+1 decorator) | **Temporary** | Upstream workflow-level AgentConfigurator |
 | `ConfigAwareA2AService` + reflection | **Temporary** | Upstream `setA2AService()` + AgentConfigurator |
 | `VertxA2AHttpClientProvider` | Yes | — |
 | `VertxA2AHttpClient` | Yes | — |
@@ -210,19 +232,18 @@ Addresses ARC42STORIES item "A2A calls block Vert.x event loop" — Vert.x WebCl
 
 Two PRs within C6:
 
-1. **Config overrides** — Components 1, 2, 4 + config structure + tests
+1. **Config overrides** — Components 1, 2, 4 + config structure + tests. PR description includes a "Temporary workarounds" section listing each wrapper, the upstream issue it depends on, and the removal path.
 2. **Vert.x A2A transport** — Component 3 + tests (independent, separate review)
-
-Both PRs reference the upstream issues in their descriptions. PR 1 includes a "Temporary workarounds" section listing each wrapper, the upstream issue it depends on, and the removal path.
 
 ## Testing Strategy
 
 1. **Config resolution tests** — verify per-agent config overrides annotation defaults for maxIterations and a2aServerUrl
 2. **Default fallback tests** — verify annotation values are used when no config is present
-3. **Global default tests** — verify `defaultMaxIterations` applies when no per-agent config exists
+3. **Global default inheritance tests** — verify unnamed `max-iterations` applies to all agents via `@WithDefaults`
 4. **Config expression tests** — verify `${...}` patterns in a2aServerUrl annotations resolve from config
 5. **Resolution priority tests** — named config > expression > raw annotation value
-6. **Build-time validation tests** — duplicate config key detection, unknown config key warning
-7. **Vert.x HTTP client tests** — GET/POST/DELETE operations, SSE streaming
-8. **Integration test** — full agent with config-overridden maxIterations executes the correct number of iterations
-9. **DevUiConfig separation test** — verify dev-ui config works independently at the new prefix
+6. **Fluent chain integrity tests** — verify config override fires even when upstream chains multiple fluent calls before `build()`
+7. **Build-time validation tests** — duplicate config key detection, reserved name rejection, unknown config key warning
+8. **Vert.x HTTP client tests** — GET/POST/DELETE operations, SSE streaming
+9. **Integration test** — full agent with config-overridden maxIterations executes the correct number of iterations
+10. **DevUiConfig co-existence test** — verify dev-ui config works at the same prefix without ghost map entries
