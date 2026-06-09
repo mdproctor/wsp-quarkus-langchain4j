@@ -148,12 +148,20 @@ Issue tracking: declined
 
 ---
 
+## PR Review Actions
+
+| PR | Action needed | Detail |
+|----|---------------|--------|
+| ~~[#2534](https://github.com/quarkiverse/quarkus-langchain4j/pull/2534)~~ | ~~Move `AgenticJsonRpcService` to `runtime-dev` module~~ | Done — commit 28bfa3844. Class moved to `agentic/runtime-dev` module (`quarkus-langchain4j-agentic-dev`). |
+
+---
+
 ## Upstream Contributions
 
 | Issue | Repo | Status | What | Blocks |
 |-------|------|--------|------|--------|
 | [#5376](https://github.com/langchain4j/langchain4j/issues/5376) | langchain4j/langchain4j | Filed | Pluggable `DefaultExecutorProvider` SPI for parallel agent execution | Nothing — C3 proceeds without it; simplifies Quarkus wiring if accepted |
-| [#5377](https://github.com/langchain4j/langchain4j/issues/5377) | langchain4j/langchain4j | Filed | Generalise `ChatSupplierParameterResolver` to all supplier types | Nothing — C3 defers C-4 to this; `@ParallelExecutor` stays static until accepted |
+| [#5377](https://github.com/langchain4j/langchain4j/issues/5377) / [PR #5394](https://github.com/langchain4j/langchain4j/pull/5394) | langchain4j/langchain4j | PR submitted | Generalise `SupplierParameterResolver` to all supplier types | Enables `@CdiBean` on all supplier annotations, not just `@ChatModelSupplier` |
 | [#5378](https://github.com/langchain4j/langchain4j/issues/5378) | langchain4j/langchain4j | Filed | Allow `@ParallelExecutor` to accept DI-injected parameters | Blocked by #5377 |
 | ~~[#5360](https://github.com/langchain4j/langchain4j/issues/5360)~~ | langchain4j/langchain4j | Closed | Parallel execution waits on submission order rather than completion order | — |
 
