@@ -1,35 +1,39 @@
 # Handoff — quarkus-langchain4j
-_2026-06-08_
+_2026-06-09_
 
 ## Last Session
 
-Completed Chapter 4 (Observable Agents). Four CDI `AgentListener` beans — OTel spans, Micrometer metrics, CDI events, health check — conditionally registered via `AdditionalBeanBuildItem` in `AgenticObservabilityProcessor`. Dev UI HTML blobs replaced with structured JSON + Vaadin grids. Hot-reload fix via `ShutdownContext`. PR #2550 opened on quarkiverse. Epic #2549 created with ARC42STORIES embedded. Chapter issues created (#2545–#2548) with specs attached in `<details>` toggles. PRs updated to reference issues instead of carrying inline specs. Specs-on-issues convention added to CLAUDE.md.
+Implemented C6 (Configurable Agents) — per-agent config overrides, config expression resolution, Vert.x A2A transport. Then reconstructed all 5 PR branches as self-contained, standalone-compilable commits. Each PR now has a family header, ARC42 references removed, George's feedback addressed. Upstream issues filed (#5399, #5400). Mario tagged on #2534 about his AgenticProcessor rework.
 
 ## Immediate Next Step
 
-Start **Chapter 5 (Guarded Agents)** or **Chapter 6 (Configurable Agents)** — both are unblocked. C5 adds `@InputGuardrails`/`@OutputGuardrails` via `AgentListener` pipeline. C6 adds `quarkus.langchain4j.agent.*` config namespace and A2A URL resolution.
+Wait for #2526 CI to go green (reconstructed branch pushed, should trigger CI). If it passes, ping George for review. If it fails, check the build log — the branch was verified locally.
+
+## Cross-Module
+
+**Blocked by:**
+- `langchain4j-agentic` — Mario's AgenticProcessor rework (compile-time generation replacing dynamic proxies). Our PRs #2534–#2550 may need rebasing once his changes land. Config infrastructure (AgenticRuntimeConfig, build-time name extraction) is unaffected.
 
 ## What's Left
 
-- PR [#2526](https://github.com/quarkiverse/quarkus-langchain4j/pull/2526) (C1 — invokeAgent allowlist) awaiting review · S · Low
-- PR [#2534](https://github.com/quarkiverse/quarkus-langchain4j/pull/2534) (C1 — quick wins + safety) awaiting review · M · Low
-- PR [#2542](https://github.com/quarkiverse/quarkus-langchain4j/pull/2542) (C2 — CDI auto-wiring) awaiting review · M · Low
-- PR [#2544](https://github.com/quarkiverse/quarkus-langchain4j/pull/2544) (C3 — parallel safety) awaiting review · M · Low
-- PR [#2550](https://github.com/quarkiverse/quarkus-langchain4j/pull/2550) (C4 — observable agents) awaiting review · L · Low
+- OTel tag rename PR — split from #2550 per George's feedback. `AiServicesProcessor` + `MetricsCountedWrapper` aligning with `gen_ai.*` semantic conventions · S · Low
+- C6 PR — create after C4 (#2550) merges. Code is on `fork/main` (commits `129da8b`–`d0afde3`) · M · Low
+- Code formatting command — user mentioned a PR comment with specific formatting instructions, couldn't locate it. `mvn process-sources` runs formatter + impsort and all branches pass · XS · Low
+- Upstream PR #5394 — SupplierParameterResolver generalisation, submitted, awaiting review · S · Low
 
 ## What's Next
 
-| # | Chapter | Scale | Complexity | Notes |
-|---|---------|-------|------------|-------|
-| C5 | Guarded Agents | M | Med | @InputGuardrails/@OutputGuardrails via AgentListener |
-| C6 | Configurable Agents | M | Med | Config namespace, A2A URL resolution, Vert.x WebClient |
-| C7 | Resilient Agents | M | High | Blocked on upstream scope checkpoint (#5376, #5377) |
+| # | Description | Scale | Complexity | Notes |
+|---|-------------|-------|------------|-------|
+| — | Rebase PRs on Mario's AgenticProcessor rework | M | Med | When his changes land; config infra stays, wrappers may change |
+| C7 | Resilient Agents | M | High | Blocked on upstream #5376, #5377 |
+| C8 | Persistent Agents | L | High | Future |
 
 ## References
 
+- PR chain: #2526 (ready) → #2534 → #2555 → #2544 → #2550 (all draft)
 - Epic: [#2549](https://github.com/quarkiverse/quarkus-langchain4j/issues/2549)
-- Issues: [#2545](https://github.com/quarkiverse/quarkus-langchain4j/issues/2545) (C1), [#2546](https://github.com/quarkiverse/quarkus-langchain4j/issues/2546) (C2), [#2547](https://github.com/quarkiverse/quarkus-langchain4j/issues/2547) (C3), [#2548](https://github.com/quarkiverse/quarkus-langchain4j/issues/2548) (C4)
-- C4 spec: `specs/2026-06-07-c4-observable-agents-design.md`
-- C4 plan: `plans/2026-06-07-c4-observable-agents-plan.md`
-- Blog: `blog/2026-06-08-mdp06-making-agents-visible.md`
-- Garden entry: `GE-20260608-401287` (@Readiness qualifier gotcha)
+- Upstream: [#5399](https://github.com/langchain4j/langchain4j/issues/5399), [#5400](https://github.com/langchain4j/langchain4j/issues/5400)
+- C6 spec: `specs/2026-06-09-c6-configurable-agents-design.md`
+- Blog: `blog/2026-06-09-mdp08-wrapping-upstream.md`
+- Garden: 5 entries (fluent-chain-escape, config-ghost-entry, supervisor-spi-bypass, spi-wrapping-technique, produce-builditem)
