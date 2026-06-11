@@ -111,6 +111,16 @@ At work-end, the fork push is mandatory. The blessed repo prompt should always b
 - Never run `git add CLAUDE.md` in the project repo — it will commit the symlink, not the content
 - `AGENTIC-NATIVE-AUDIT.md` and `ARC42STORIES.MD` live in the workspace — do not copy them to the project repo
 
+## Code Formatting
+
+Run before pushing any branch:
+```bash
+/opt/homebrew/bin/mvn -f /Users/mdproctor/claude/quarkus-langchain4j/pom.xml process-sources -T 1C
+```
+- `process-sources` runs the formatter (`formatter-maven-plugin`) and import sorter (`impsort-maven-plugin`)
+- `-T 1C` = one thread per CPU core (parallel module builds, faster)
+- CI runs `formatter:validate` — unformatted files fail the build
+
 ## Navigation
 
 - In workspace: `proj/` → project repo (`ls proj/` to browse the project)
