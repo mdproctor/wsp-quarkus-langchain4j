@@ -1,7 +1,7 @@
-# langchain4j-cdi Comparative Analysis — Design Spec
+# langchain4j Ecosystem Convergence — Design Spec
 
 **Date:** 2026-06-11
-**Type:** Analysis document + adoption roadmap
+**Type:** Cross-project convergence analysis + roadmap
 **Output:** `/Users/mdproctor/claude/public/quarkus-langchain4j/roadmap.md`
 **Builds on:** `specs/2026-06-08-langchain4j-cdi-fitgap.md` (positioning — complementary, not competing)
 
@@ -9,122 +9,214 @@
 
 ## Goal
 
-Produce a two-part analysis comparing langchain4j-cdi and quarkus-langchain4j across their full surface area, then distill actionable adoption items into a prioritised roadmap. The analysis treats the two projects as peer CDI integrations with different design choices, evaluated on technical merit for Quarkus users.
+Produce a convergence roadmap for the langchain4j ecosystem's three Java integration projects. Map where they currently diverge, identify upstream (langchain4j core) changes that would let all three align on shared annotations and wiring behaviours, and prioritise concrete proposals.
+
+The strategic bet: if langchain4j (upstream) and quarkus-langchain4j converge on shared SPIs and annotation attributes — with Mario already open to improvements — langchain4j-cdi faces a choice: adopt the shared approach or maintain a divergent fork. Convergence creates gravity.
+
+## The Three Projects
+
+| Project | Role | Approach |
+|---------|------|----------|
+| **langchain4j** (core) | Framework-agnostic AI framework | Defines annotations (`@Agent`, `@SequenceAgentService`, etc.) and runtime. No CDI awareness. |
+| **langchain4j-cdi** | Portable CDI integration | Reinvents 11 topology annotations with CDI attributes. Runtime wiring. Targets all Jakarta EE servers. |
+| **quarkus-langchain4j** | Quarkus-native integration | Wraps upstream annotations. Build-time validation, CDI wiring, config overlay. GraalVM native. |
 
 ## Scope
 
-- Full CDI wiring surface: component resolution, configuration, tools, guardrails, RAG, memory, scope
-- Full agentic surface: agent topology annotations, composition model, observability
-- Covers langchain4j-cdi as of June 2026 (modules: core, portable-ext, build-compatible-ext, config, a2a, mcp)
-- Evaluates against quarkus-langchain4j current state plus planned work (#2572, agentic PR chain C4–C8)
+- All three projects' annotation surfaces, resolution SPIs, and wiring behaviours
+- Focus on upstream changes that are framework-agnostic (not Quarkus-specific) but enable CDI integrations
+- Covers: component resolution, agent topology, guardrails, observability, configuration, tools
+- Existing upstream contributions (#5394 merged, #5376/#5378/#5399/#5400 filed) as foundation
 
 ## Non-goals
 
-- Not a competitive positioning document — the fit-gap already established they're complementary
-- Not a migration guide — no one is switching between them
-- Not prescriptive on timeline — the roadmap prioritises but doesn't schedule
+- Not asking langchain4j-cdi to change — this is a convergence roadmap that makes the shared path more attractive than the divergent one
+- Not Quarkus-specific proposals — every upstream proposal must be framed as framework-agnostic
+- Not prescriptive on timeline — prioritised but not scheduled
 
 ---
 
-## Part 1: Strategic Map
+## Part 1: Divergence Map
 
-Eight dimensions, each with:
-- **How langchain4j-cdi does it** — concrete patterns and code examples
-- **How quarkus-langchain4j does it** — current state and planned work
-- **Verdict** — who got it right, and what can be learned
+Where the three projects differ today and what drives the divergence.
 
-### Dimension 1: Component Resolution
+### 1. Agent Topology Annotations
 
-**langchain4j-cdi:** Name-based bean references. `chatModelName = "my-model"` resolves via `Instance.select(NamedLiteral.of(name))` at runtime. Default `"#default"` selects the unnamed default bean. No supplier classes, no sentinel markers.
+**The problem:** langchain4j-cdi reinvented 11 annotations because upstream's are CDI-unaware.
 
-**quarkus-langchain4j:** Supplier-class attributes with 15+ sentinel marker classes (`BeanChatLanguageModelSupplier`, `BeanIfExistsRetrievalAugmentorSupplier`, `NoChatMemoryProviderSupplier`). Each marker's `get()` throws `UnsupportedOperationException` — they're flags, not real suppliers. Build-time processor detects marker vs. custom supplier and generates appropriate injection.
+| Concern | langchain4j (upstream) | langchain4j-cdi | quarkus-langchain4j |
+|---------|----------------------|-----------------|---------------------|
+| Annotations | `@Agent`, `@SequenceAgentService`, `@LoopAgentService`, etc. | `@RegisterSimpleAgent`, `@RegisterSequenceAgent`, `@RegisterLoopAgent`, etc. (11 total) | Uses upstream's annotations directly |
+| Agent name | `@Agent(name = "...")` | `@RegisterSimpleAgent(name = "...")` | `@Agent(name = "...")` |
+| Scope | Not on annotation | `scope = RequestScoped.class` on every annotation | Build-time processor controls scope |
+| Guardrails | Not on annotation | `inputGuardrails`/`outputGuardrails` on `@RegisterSimpleAgent` only | Separate `@AgentInputGuardrails`/`@AgentOutputGuardrails` annotations (agentic module) |
+| Listener | Not on annotation | `agentListenerName = "..."` | Build-time auto-discovery of `AgentListener` beans |
+| Sub-agents | Class-based references | `subAgentNames = {"a", "b"}` (string-based) | Class-based, build-time validated |
 
-**#2572 plan:** Add direct bean-class attributes (`Class<? extends T>`) alongside existing supplier attributes. Deprecate supplier versions. The bean class is resolved as a CDI bean at build time — no supplier wrapper, no sentinel markers.
+**Root cause:** upstream annotations lack extension points for CDI concerns. langchain4j-cdi's response was to fork; quarkus-langchain4j's was to add a build-time layer. If upstream added optional CDI-friendly attributes (scope hint, guardrail classes, listener class), both integrations could use the same annotations.
 
-**Verdict:** All three approaches converge on "just reference the bean." langchain4j-cdi uses strings (flexible but loses type safety). #2572 uses class references (type-safe, build-time validated). The current supplier pattern is the worst of all worlds — complex API surface for no user benefit. #2572's direction is right.
+**Convergence proposal:** Add optional attributes to upstream annotations that CDI integrations can read. Not CDI-specific — just `Class<?>` arrays and metadata that any framework can interpret. See roadmap item 1.
 
-### Dimension 2: Configuration
+### 2. Component Resolution
 
-**langchain4j-cdi:** Pluggable `LLMConfig` SPI discovered via `ServiceLoader`. Default implementation reads MicroProfile Config under `dev.langchain4j.cdi.plugin.<bean-name>.config.<property>`. Can instantiate beans entirely from config properties (`class=com.example.MyModel`). Expression resolution SPI chains `${mp.config}` and `#{jakarta.el}` resolvers — all string attributes in annotations pass through the resolver chain before CDI lookup.
+**The problem:** Three different ways to say "use this bean."
 
-**quarkus-langchain4j:** Direct Quarkus Config integration under `quarkus.langchain4j.*`. Model providers (OpenAI, Ollama, etc.) each have typed config classes generated at build time. Agentic module adds `quarkus.langchain4j.agent.<name>.*` namespace (C6 PR). No expression resolution in annotation attributes — config values are resolved in recorders, not annotations.
+| Pattern | langchain4j | langchain4j-cdi | quarkus-langchain4j |
+|---------|-------------|-----------------|---------------------|
+| Current | `Supplier<T>` static methods | `chatModelName = "my-model"` (named string) | `chatLanguageModelSupplier = MySupplier.class` (supplier class + sentinel markers) |
+| Planned | `SupplierParameterResolver` SPI (#5394 merged) | — | #2572: direct bean-class `Class<? extends T>` |
 
-**Verdict:** Expression resolution is the interesting idea here. Being able to write `@RegisterSimpleAgent(chatModelName = "${ai.model.name}")` and have it resolved from config is genuinely useful for multi-environment deployments. However, Quarkus already has `@ConfigProperty` injection and programmatic config access — the same thing is achievable without an SPI. The property-based bean creation (`class=com.example.MyModel` in config) is clever for generic CDI but unnecessary in Quarkus where extensions create typed config classes. **Action: evaluate expression resolution as a lightweight addition, but don't adopt the LLMConfig SPI.**
+**Root cause:** upstream started with static supplier methods (no DI). quarkus-langchain4j wrapped them in marker classes. langchain4j-cdi bypassed them entirely with name strings. All three are workarounds for the same missing feature: a framework-agnostic way to say "resolve this component via your DI container."
 
-### Dimension 3: Agent Topology
+**Convergence proposal:** Generalise `SupplierParameterResolver` (already merged) into a full resolution SPI that covers all component types — not just supplier parameters. A CDI integration registers a resolver; upstream calls it. No CDI imports in upstream code. See roadmap item 2.
 
-**langchain4j-cdi:** 11 dedicated annotations (`@RegisterSimpleAgent`, `@RegisterSequenceAgent`, `@RegisterLoopAgent`, `@RegisterParallelAgent`, `@RegisterSupervisorAgent`, `@RegisterPlannerAgent`, `@RegisterA2AAgent`, `@RegisterMcpClientAgent`, `@RegisterHumanInTheLoopAgent`, `@RegisterConditionalAgent`, `@RegisterParallelMapperAgent`). Each defines one agent node. All share common attributes (name, description, outputKey, scope, optional, summarizedContext) plus topology-specific ones.
+### 3. Guardrails
 
-**quarkus-langchain4j:** Uses upstream `langchain4j-agentic` annotations directly (`@Agent`, `@Agents`, `@SequenceAgentService`, `@LoopAgentService`, `@SupervisorAgentService`, `@ParallelAgent`, `@A2AClient`). The agentic module adds Quarkus-native build-time validation, CDI wiring, and config overlay — but the user-facing annotations are upstream's.
+**The problem:** Guardrails exist in langchain4j-cdi's annotations but not in upstream's.
 
-**Verdict:** langchain4j-cdi reinvents what langchain4j-agentic provides. This creates a maintenance burden and divergence risk — when upstream adds a new topology, langchain4j-cdi needs a new annotation. quarkus-langchain4j's approach of wrapping upstream is architecturally sounder. However, langchain4j-cdi's annotations are more CDI-native (scope, named-bean resolution built into the annotation) whereas upstream's annotations are framework-agnostic. **Skip — wrapping upstream is the right strategy. The extra CDI-native attributes are better handled via our config overlay (C6) than by forking the annotations.**
+| | langchain4j | langchain4j-cdi | quarkus-langchain4j |
+|--|-------------|-----------------|---------------------|
+| On AI services | Not on annotation | `inputGuardrails`/`outputGuardrails` on `@RegisterAIService` | Not on `@RegisterAiService` |
+| On agents | Not on annotation | On `@RegisterSimpleAgent` only | `@AgentInputGuardrails`/`@AgentOutputGuardrails` on all agent types |
+| Interface | `InputGuardrail`/`OutputGuardrail` (in upstream runtime) | Same interfaces | Same interfaces |
 
-### Dimension 4: Agent Composition
+**Root cause:** The guardrail interfaces exist in upstream. The annotation attributes to declare them don't. Both CDI integrations added their own — inconsistently.
 
-**langchain4j-cdi:** String-based `subAgentNames = {"stepA", "stepB"}`. Runtime resolution via `Instance.select(NamedLiteral.of(name))`. Unresolvable names are skipped with a WARNING. No compile-time or build-time validation that referenced agents exist.
+**Convergence proposal:** Add `inputGuardrails()` and `outputGuardrails()` as `Class<?>[]` attributes to upstream's `@Agent` annotation (and `@RegisterAiService` equivalent if one exists). Framework integrations resolve the classes via their DI container. See roadmap item 3.
 
-**quarkus-langchain4j:** Type-safe agent references. Build-time processor validates that referenced agents exist, checks scope compatibility, verifies no circular dependencies. Missing agents are `DeploymentException` — fail fast at startup, not a silent runtime skip.
+### 4. Observability
 
-**Verdict:** Build-time validation is strictly better. String-based composition is convenient to write but fragile to maintain — a typo in `subAgentNames` produces a silent runtime failure. quarkus-langchain4j's approach is the right one. **Skip — our approach is better.**
+**The problem:** Three different observability integration points.
 
-### Dimension 5: Tool Handling
+| | langchain4j | langchain4j-cdi | quarkus-langchain4j |
+|--|-------------|-----------------|---------------------|
+| Agent-level | `AgentListener` interface | `agentListenerName` (string-based bean lookup) | Build-time auto-discovery + `Instance<AgentListener>` |
+| LLM-level | `ChatModelListener` | `SpanChatModelListener` (OTel) | Quarkus OTel integration |
+| Metrics | — | — | Micrometer metrics + CDI events (C4 PR #2550) |
 
-**langchain4j-cdi:** Three resolution strategies composable on a single service: `tools = {BookingService.class}` (class array), `toolNames = {"bookingTool"}` (named beans), `toolProviderName = "dynamicProvider"` (ToolProvider bean). Resolution: CDI bean lookup first, no-arg constructor fallback second.
+**Root cause:** `AgentListener` is in upstream but there's no annotation attribute to declare one. langchain4j-cdi added a string attribute; quarkus-langchain4j uses CDI auto-discovery. Both work but neither is standardised.
 
-**quarkus-langchain4j:** `tools = {BookingService.class}` on `@RegisterAiService`. Build-time processor discovers tool methods via Jandex, validates signatures, generates optimised invokers. `toolProviderSupplier` attribute for dynamic tools. No named-bean tool resolution. No no-arg constructor fallback — tools must be CDI beans.
+**Convergence proposal:** Add `agentListener()` as a `Class<?>` attribute to upstream's `@Agent` annotation. Framework integrations resolve it; auto-discovery remains a framework-specific enhancement. See roadmap item 4.
 
-**Verdict:** The no-arg constructor fallback is pragmatic for simple tools that don't need injection, but goes against Quarkus CDI philosophy (everything is a bean, validated at build time). Named-bean tool resolution (`toolNames`) adds flexibility for dynamic tool sets but is achievable via `ToolProvider` in quarkus-langchain4j. **Skip — the current approach is Quarkus-appropriate. ToolProvider covers the dynamic case.**
+### 5. Configuration
 
-### Dimension 6: Guardrails
+**The problem:** Each project has its own config namespace and resolution.
 
-**langchain4j-cdi:** Built into `@RegisterAIService` and `@RegisterSimpleAgent` — `inputGuardrails`/`outputGuardrails` (class arrays) and `inputGuardrailNames`/`outputGuardrailNames` (string arrays). Resolved as ordered list. CDI bean lookup with no-arg constructor fallback. Classes take precedence if both specified. Only on `@RegisterAIService` and `@RegisterSimpleAgent` — other topologies lack guardrail attributes.
+| | langchain4j | langchain4j-cdi | quarkus-langchain4j |
+|--|-------------|-----------------|---------------------|
+| Namespace | — | `dev.langchain4j.cdi.plugin.*` | `quarkus.langchain4j.*` |
+| Mechanism | — | `LLMConfig` SPI + `ExpressionResolver` SPI | Quarkus Config + typed config classes |
+| Expression resolution | — | `${mp.config}` and `#{jakarta.el}` in annotation attributes | Not in annotations; config resolved in recorders |
 
-**quarkus-langchain4j:** `@RegisterAiService` has no guardrail attributes. The agentic module (C5 PR #2555) adds `@AgentInputGuardrails`/`@AgentOutputGuardrails` on all agent interface types — not just simple agents. Build-time validated. However, guardrails on `@RegisterAiService` (non-agentic AI services) are absent.
+**Root cause:** Configuration is inherently framework-specific. But the pattern of overriding annotation attributes from config is shared — both integrations do it, differently.
 
-**Verdict:** langchain4j-cdi has guardrails on `@RegisterAIService` today — quarkus-langchain4j doesn't. This is a real gap for non-agentic AI services. Users who want input validation on a plain `@RegisterAiService` chat service have no declarative option. The agentic module's approach (`@AgentInputGuardrails`) is the right pattern — extend it to `@RegisterAiService`. **Adopt — add guardrail attributes to `@RegisterAiService`, mirroring the agentic module's approach.**
+**Convergence proposal:** This is the one area where convergence is less clear. Upstream doesn't need a config SPI — that's the framework's job. What upstream could provide is a `@Configurable` marker or naming convention that tells framework integrations "this attribute is overridable from config." See roadmap item 5 (evaluate).
 
-### Dimension 7: RAG & Retrieval
+### 6. Tool Handling
 
-**langchain4j-cdi:** `contentRetrieverName` and `retrievalAugmentorName` on `@RegisterAIService` — string-based named-bean lookup. RetrievalAugmentor takes precedence over ContentRetriever when both specified. Configuration via properties.
+**The problem:** Minor divergence, mostly resolved.
 
-**quarkus-langchain4j:** `retrievalAugmentor` supplier attribute on `@RegisterAiService`. `BeanIfExistsRetrievalAugmentorSupplier` as default — auto-discovers a `RetrievalAugmentor` bean if one exists. No direct `contentRetriever` attribute. #2572 proposes `@RagPipeline` composition annotation and direct bean-class attributes.
+| | langchain4j | langchain4j-cdi | quarkus-langchain4j |
+|--|-------------|-----------------|---------------------|
+| Declaration | `tools` class array | `tools` + `toolNames` + `toolProviderName` | `tools` + `toolProviderSupplier` |
+| Resolution | Direct instantiation | CDI → no-arg constructor fallback | CDI only (build-time validated) |
 
-**Verdict:** Similar capabilities, different resolution mechanisms. #2572's `@RagPipeline` goes significantly beyond either current approach — it composes the full pipeline (router → transformer → retriever → injector → aggregator) declaratively. langchain4j-cdi's approach is simpler but less powerful. **#2572 is the right direction — no additional ideas to adopt from langchain4j-cdi here.**
+**Root cause:** Tool resolution follows the same component resolution divergence. Once the resolution SPI converges (item 2), tool handling aligns automatically.
 
-### Dimension 8: Scope & Lifecycle
-
-**langchain4j-cdi:** Every annotation has `scope()` defaulting to `RequestScoped` (for `@RegisterAIService`) or `ApplicationScoped` (for agent annotations). Users can override per service/agent.
-
-**quarkus-langchain4j:** `@RegisterAiService` services are generated as `@ApplicationScoped` synthetic beans. Scope is not configurable via the annotation. The agentic module's CDI wiring doesn't expose scope control.
-
-**Verdict:** Configurable scope per service is a reasonable feature. `RequestScoped` makes sense for chat services with per-request memory; `ApplicationScoped` makes sense for stateless utility services. However, in Quarkus, scope is typically controlled by the CDI annotation on the bean, not by a framework attribute. Adding a `scope` attribute to `@RegisterAiService` would be non-standard Quarkus CDI. **Evaluate — useful in principle, but the Quarkus-native approach would be to let users annotate their interface with `@RequestScoped` directly. Check if the current processor respects scope annotations on the interface.**
+**Convergence proposal:** Covered by item 2 (resolution SPI). No separate proposal needed.
 
 ---
 
-## Part 2: Adoption Roadmap
+## Part 2: Convergence Roadmap
 
-| # | Pattern | Source | Action | Fits with | Priority | Scale | Complexity | Rationale |
-|---|---------|--------|--------|-----------|----------|-------|------------|-----------|
-| 1 | Direct bean-class attributes on `@RegisterAiService` | Converging | **Adopt** | #2572 step 1 | High | S | Low | Eliminates supplier markers. #2572 already proposes this — validates the direction. |
-| 2 | Guardrails on `@RegisterAiService` | langchain4j-cdi | **Adopt** | Standalone or #2572 | High | M | Low | Real gap — non-agentic AI services have no declarative guardrails. Mirror agentic module's `@AgentInputGuardrails` pattern. |
-| 3 | Expression resolution in annotation attributes | langchain4j-cdi | **Evaluate** | Standalone | Med | M | Med | `chatModelName = "${ai.model}"` is ergonomic for multi-env. But Quarkus Config + `@ConfigProperty` may already cover this. Need to check if there are cases that config injection can't reach. |
-| 4 | Configurable scope per AI service | langchain4j-cdi | **Evaluate** | Standalone | Low | S | Low | Useful but may conflict with Quarkus CDI conventions. Check if processor already respects `@RequestScoped` on the interface. If yes, skip. |
-| 5 | `@RagPipeline` composition annotation | #2572 (original) | **Adopt** | #2572 step 2 | High | M | Med | Goes beyond langchain4j-cdi's simple name-ref. Full pipeline composition is a differentiator. |
-| 6 | No-arg constructor fallback for tools | langchain4j-cdi | **Skip** | — | — | — | — | Violates Quarkus CDI philosophy. Tools should be beans. |
-| 7 | Named-bean tool resolution (`toolNames`) | langchain4j-cdi | **Skip** | — | — | — | — | `ToolProvider` already covers dynamic tool sets. |
-| 8 | Property-based bean creation | langchain4j-cdi | **Skip** | — | — | — | — | Quarkus extensions generate typed config classes. Property-based instantiation is for generic CDI. |
-| 9 | Separate agent topology annotations | langchain4j-cdi | **Skip** | — | — | — | — | Wrapping upstream langchain4j-agentic is architecturally sounder. |
-| 10 | String-based agent composition | langchain4j-cdi | **Skip** | — | — | — | — | Build-time type-safe validation is strictly better. |
+Each item is an upstream proposal, framed as framework-agnostic. The "Enables" column shows what both CDI integrations gain.
 
-### Adoption item detail
+| # | Upstream Proposal | Status | Enables for CDI integrations | Priority | Scale | Complexity |
+|---|-------------------|--------|------------------------------|----------|-------|------------|
+| 1 | Add optional attributes to `@Agent` annotations (guardrails, listener, scope hint) | New | Both integrations use upstream annotations instead of forking | High | M | Med |
+| 2 | Generalise `SupplierParameterResolver` into a full component resolution SPI | Seed merged (#5394) | All component types resolved via DI — not just supplier params | High | M | Med |
+| 3 | Add guardrail class-array attributes to `@Agent` and AI service annotations | New | Consistent guardrail declaration across all frameworks | High | S | Low |
+| 4 | Add `agentListener` class attribute to `@Agent` | New | Standard listener attachment point — frameworks resolve via DI | Med | S | Low |
+| 5 | Config override convention for annotation attributes | New (evaluate) | Frameworks know which attributes are config-overridable | Low | S | Med |
+| 6 | `@ParallelExecutor` DI params (#5378) | Filed | CDI-injected params on parallel executors | Med | S | Low |
+| 7 | Widen `AgentConfigurator` to workflow builders (#5399) | Filed | Config overlay on loops, supervisors, A2A — not just agents | Med | S | Low |
+| 8 | `A2AService.setA2AService()` setter (#5400) | Filed | CDI lifecycle integration for A2A services | Med | S | Low |
 
-**Item 1 — Direct bean-class attributes:** Add `contentRetriever`, `chatMemoryProvider`, `moderationModel`, `toolProvider` as `Class<? extends T>` attributes to `@RegisterAiService`. The build-time processor resolves the class as a CDI bean — same validation as today, simpler API. Deprecate supplier equivalents. This is #2572 step 1 with validation from langchain4j-cdi's successful use of the same pattern (theirs is name-based but the principle is identical: reference the bean directly).
+### Item detail
 
-**Item 2 — Guardrails on @RegisterAiService:** Add `inputGuardrails` and `outputGuardrails` attributes to `@RegisterAiService`. Use class-array references (not string names) for type safety. Build-time validated: guardrail classes must be CDI beans implementing `InputGuardrail`/`OutputGuardrail`. Ordered list execution matches langchain4j-cdi's model. This fills a real gap — the agentic module has guardrails on agents, but plain AI services don't.
+**Item 1 — Annotation extension points:** The central proposal. Add optional attributes to upstream's `@Agent`, `@SequenceAgentService`, `@LoopAgentService`, etc. that CDI integrations can read:
 
-**Item 3 — Expression resolution:** Investigate whether there are annotation attributes in `@RegisterAiService` or agent annotations where config-driven values would be useful but `@ConfigProperty` injection can't reach. Likely candidate: `modelName` on `@RegisterAiService` — currently a string literal, could benefit from `${profile.model}` resolution. If the use case is narrow, a targeted solution (e.g., config overlay in the processor) is better than a general expression resolution SPI.
+```java
+@Agent(
+    name = "myAgent",
+    // Existing attributes unchanged
+    
+    // New optional CDI-friendly attributes (framework-agnostic)
+    inputGuardrails = {RateLimitGuardrail.class, ContentFilterGuardrail.class},
+    outputGuardrails = {PiiRedactionGuardrail.class},
+    agentListener = MetricsAgentListener.class
+)
+```
 
-**Item 4 — Configurable scope:** Check `AiServicesProcessor` for whether `@RequestScoped` or `@SessionScoped` on the AI service interface is respected. If yes, document it. If no, consider supporting it — minor processor change to read the scope annotation from the interface class.
+These are `Class<?>` arrays — no CDI imports. Upstream ignores them in its default runtime. Framework integrations (CDI, Spring, etc.) read them and resolve via their DI container. This eliminates the reason langchain4j-cdi forked the annotations.
+
+**Framing for Mario:** "These attributes let any framework integration declaratively attach guardrails and listeners to agents without the framework needing its own annotation set. It's the same pattern as `tools = {MyTool.class}` — which already works this way."
+
+**Item 2 — Full resolution SPI:** `SupplierParameterResolver` (#5394, merged) proved the pattern: upstream defines an SPI, frameworks register resolvers. Generalise this to cover all component types that AI services and agents need — chat models, memory providers, content retrievers, moderation models, tool providers. A single `ComponentResolver` SPI that frameworks implement once.
+
+```java
+// In upstream — framework-agnostic SPI
+public interface ComponentResolver {
+    <T> T resolve(Class<T> type, String name);
+    boolean canResolve(Class<?> type);
+}
+```
+
+Upstream's default: `ServiceLoader` + no-arg constructor. CDI integration: `CDI.current().select(type)`. Quarkus integration: build-time synthetic bean injection. Spring: `ApplicationContext.getBean(type)`.
+
+**Framing for Mario:** "This is the generalisation of `SupplierParameterResolver` we discussed in #5377. Instead of one SPI per supplier type, one SPI covers all component resolution. Makes langchain4j genuinely framework-pluggable."
+
+**Item 3 — Guardrail attributes:** Subset of item 1, broken out because it can ship independently. Add `inputGuardrails()` and `outputGuardrails()` as `Class<?>[]` to `@Agent` (and to `@RegisterAiService` if upstream ever adds one). The guardrail interfaces already exist in upstream — this just adds the declaration point.
+
+**Item 4 — AgentListener attribute:** Another subset of item 1. Add `Class<? extends AgentListener> agentListener()` to `@Agent`. Currently langchain4j-cdi uses a string name; quarkus-langchain4j uses CDI auto-discovery. A class attribute on the annotation standardises attachment while letting frameworks resolve differently.
+
+**Item 5 — Config override convention:** Evaluate only. The question is whether upstream should provide metadata about which annotation attributes are config-overridable (e.g., `maxIterations` on `@LoopAgentService`). quarkus-langchain4j already does this via its C6 config namespace; langchain4j-cdi does it via expression resolution. A shared convention would let both integrations use the same config property names. But this may be over-engineering — each framework's config namespace is inherently its own.
+
+---
+
+## Part 3: Gravity Effect
+
+What happens when langchain4j + quarkus-langchain4j converge:
+
+**For langchain4j-cdi:**
+- Upstream annotations now have the attributes they forked to get (guardrails, listener, scope hint)
+- The resolution SPI means they can use upstream annotations with CDI bean lookup — no custom annotations needed
+- Continuing to maintain 11 forked annotations becomes tech debt, not differentiation
+- Users who start with langchain4j-cdi and move to Quarkus get the same annotation API — lower friction
+
+**For the ecosystem:**
+- One set of user-facing annotations across all Java frameworks
+- Documentation, tutorials, and examples are portable
+- Community contributions (new topologies, new guardrails) land in upstream and work everywhere
+- Third-party integrations (Spring, Micronaut) can use the same SPIs
+
+**For upstream:**
+- langchain4j becomes genuinely framework-pluggable, not just "works without a framework"
+- CDI, Spring, and Micronaut integrations share a common SPI surface
+- Reduces maintenance burden — framework-specific quirks handled by framework integrations, not upstream workarounds
+
+---
+
+## Existing Upstream Contributions (foundation)
+
+| Issue | Status | Convergence role |
+|-------|--------|------------------|
+| #5394 (SupplierParameterResolver) | **Merged** | Seed for item 2 (resolution SPI) |
+| #5376 (DefaultExecutorProvider) | Open | Parallel execution pluggability |
+| #5377 (Generalise ChatSupplierParameterResolver) | Closed (covered by #5394) | — |
+| #5378 (@ParallelExecutor DI params) | Open | Item 6 |
+| #5399 (Widen AgentConfigurator) | Open | Item 7 |
+| #5400 (A2AService setter) | Open | Item 8 |
 
 ---
 
@@ -133,5 +225,5 @@ Eight dimensions, each with:
 - langchain4j-cdi source: https://github.com/langchain4j/langchain4j-cdi
 - Prior fit-gap: `specs/2026-06-08-langchain4j-cdi-fitgap.md`
 - #2572 issue: https://github.com/quarkiverse/quarkus-langchain4j/issues/2572
-- #2572 breakdown: HANDOFF.md §#2572 Breakdown
 - Agentic PR chain: #2534 → #2555 → #2544 → #2550
+- Upstream contributions: #5394 (merged), #5376, #5378, #5399, #5400
