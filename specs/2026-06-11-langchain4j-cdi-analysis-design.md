@@ -133,7 +133,7 @@ Each item is an upstream proposal, framed as framework-agnostic. The "Enables" c
 
 | # | Upstream Proposal | Status | Enables for CDI integrations | Priority | Scale | Complexity |
 |---|-------------------|--------|------------------------------|----------|-------|------------|
-| 1 | Add optional attributes to `@Agent` annotations (guardrails, listener, scope hint) | New | Both integrations use upstream annotations instead of forking | High | M | Med |
+| 1 | Add optional attributes to `@Agent` annotations (scope, guardrails, listener) | New | Both integrations use upstream annotations instead of forking | High | M | Med |
 | 2 | Generalise `SupplierParameterResolver` into a full component resolution SPI | Seed merged (#5394) | All component types resolved via DI — not just supplier params | High | M | Med |
 | 3 | Add guardrail class-array attributes to `@Agent` and AI service annotations | New | Consistent guardrail declaration across all frameworks | High | S | Low |
 | 4 | Add `agentListener` class attribute to `@Agent` | New | Standard listener attachment point — frameworks resolve via DI | Med | S | Low |
@@ -149,16 +149,17 @@ Each item is an upstream proposal, framed as framework-agnostic. The "Enables" c
 ```java
 @Agent(
     name = "myAgent",
+    scope = RequestScoped.class,  // Class<? extends Annotation> — no CDI import in upstream
     // Existing attributes unchanged
     
-    // New optional CDI-friendly attributes (framework-agnostic)
+    // New optional framework-agnostic attributes
     inputGuardrails = {RateLimitGuardrail.class, ContentFilterGuardrail.class},
     outputGuardrails = {PiiRedactionGuardrail.class},
     agentListener = MetricsAgentListener.class
 )
 ```
 
-These are `Class<?>` arrays — no CDI imports. Upstream ignores them in its default runtime. Framework integrations (CDI, Spring, etc.) read them and resolve via their DI container. This eliminates the reason langchain4j-cdi forked the annotations.
+These are `Class<?>` arrays and `Class<? extends Annotation>` — no CDI imports in upstream. The `scope` attribute defaults to `Annotation.class` (meaning "let the framework decide"). Upstream ignores these in its default runtime. Framework integrations (CDI, Spring, etc.) read them and resolve via their DI container. This eliminates the reason langchain4j-cdi forked the annotations.
 
 **Framing for Mario:** "These attributes let any framework integration declaratively attach guardrails and listeners to agents without the framework needing its own annotation set. It's the same pattern as `tools = {MyTool.class}` — which already works this way."
 
@@ -188,43 +189,43 @@ Upstream's default: `ServiceLoader` + no-arg constructor. CDI integration: `CDI.
 
 Structural barriers prevent full unification in some areas. But "can't share the mechanism" is not an excuse for incoherent design. Where the implementation must differ, the vocabulary, mental model, and developer experience should still feel like one team designed it.
 
-### Limit 1: Scope — CDI concept, can't live on upstream annotations
+### ~~Limit 1: Scope~~ → moved to convergence roadmap
 
-`scope = RequestScoped.class` requires `jakarta.enterprise.context.*` — upstream can't import it.
+Originally listed as a hard limit ("upstream can't import CDI scope classes"). In fact, upstream can define `Class<? extends Annotation> scope() default Annotation.class` — the attribute type is `java.lang.annotation.Annotation`, not CDI. Users pass `RequestScoped.class`; upstream stores a class reference without importing it. Framework integrations read the attribute and apply the scope using their own mechanism. This is the same pattern CDI `@Stereotype` uses.
 
-**Consistency despite the limit:** All three projects should use the same scope semantics. RequestScoped for stateful chat services (per-request memory). ApplicationScoped for stateless agents. The *default* should be the same everywhere even if the *mechanism* to override it differs. Upstream can document the expected scoping contract ("an agent instance may be shared across requests unless the framework provides per-request lifecycle") without referencing CDI. Framework integrations then implement that contract using their own scope mechanism.
+**Added to roadmap as item 1a:** scope attribute on upstream annotations. See Part 2.
 
-### Limit 2: Config namespace — framework-owned
+### Limit 1: Config namespace — framework-owned
 
 `quarkus.langchain4j.agent.myAgent.maxIterations` vs `dev.langchain4j.cdi.plugin.myAgent.config.maxIterations`. Each framework dictates its namespace prefix.
 
 **Consistency despite the limit:** The *property name suffix* can be shared. If upstream documents that `maxIterations` is the canonical property name for loop agent iteration limits, both frameworks can use it as their leaf key — only the prefix differs. A shared property name glossary in upstream (not an SPI, just documentation) gives framework integrations a convention to follow rather than each inventing names independently.
 
-### Limit 3: Build-time vs. runtime validation
+### Limit 2: Build-time vs. runtime validation
 
 Quarkus validates at build time (`DeploymentException`). Portable CDI validates at runtime (or warns and skips). You can't make a portable CDI extension fail at build time — it doesn't have a build phase.
 
 **Consistency despite the limit:** The *what* can be consistent even when the *when* differs. Both integrations should validate the same things: missing agents referenced in `subAgentNames`, guardrail classes that don't implement the guardrail interface, circular agent dependencies. The error messages should use the same terminology and reference the same annotation attributes. A developer who sees "Agent 'stepB' referenced in @SequenceAgentService.subAgentNames is not registered" should get the same message on Quarkus (at build time) and portable CDI (at startup) — only the timing differs.
 
-### Limit 4: Error handling philosophy — fail-fast vs. warn-and-skip
+### Limit 3: Error handling philosophy — fail-fast vs. warn-and-skip
 
 langchain4j-cdi skips unresolvable sub-agents with a WARNING. Quarkus throws. These reflect different priorities: portability tolerance vs. correctness.
 
 **Consistency despite the limit:** Upstream can define the *contract* without dictating the *enforcement*. Document: "A framework integration MUST resolve all referenced sub-agents. If resolution fails, the integration SHOULD fail with a descriptive error. Implementations MAY fall back to a degraded mode with a WARNING, but this is not the recommended default." This gives both integrations a shared contract while letting each choose strictness. Over time, gravity pulls toward fail-fast as the better default.
 
-### Limit 5: Thread context propagation — no portable CDI equivalent
+### Limit 4: Thread context propagation — no portable CDI equivalent
 
 Quarkus uses SmallRye Context Propagation for parallel agent execution (C3 PR #2544). Portable CDI has `ManagedExecutorService` (Jakarta Concurrency) but not all servers support it, and the context types propagated vary.
 
 **Consistency despite the limit:** The *observable behaviour* should be the same: CDI request context, security context, and trace context are available on parallel agent worker threads. The mechanism differs (SmallRye vs. ManagedExecutorService vs. manual propagation), but the developer expectation is identical. Upstream can document this as a contract: "Framework integrations MUST propagate the calling thread's request context to parallel agent execution threads." Whether that's SmallRye, Jakarta Concurrency, or manual `ThreadLocal` copying is the framework's problem.
 
-### Limit 6: GraalVM native image
+### Limit 5: GraalVM native image
 
 langchain4j-cdi's no-arg constructor fallback for tools and guardrails requires reflection that doesn't work in native without explicit registration. Quarkus eliminates this path entirely at build time.
 
 **Consistency despite the limit:** This is a capability gap, not a design inconsistency. The shared annotation surface works identically in both — it's the *fallback behaviour* that differs. If both integrations converge on "resolve via DI container" as the primary path (roadmap item 2), the no-arg constructor fallback becomes a portable-CDI-only escape hatch, not a divergent design. Document it as: "The DI container is the primary resolution mechanism. No-arg constructor instantiation is a fallback for environments without DI and is not available in all deployment modes (e.g., GraalVM native)."
 
-### Limit 7: Dev UI / Dev Services — Quarkus-only value
+### Limit 6: Dev UI / Dev Services — Quarkus-only value
 
 No portable CDI equivalent. These are Quarkus platform features.
 
@@ -232,7 +233,7 @@ No portable CDI equivalent. These are Quarkus platform features.
 
 ### Design principle
 
-The pattern across all seven limits: **share the contract, vary the mechanism.** Upstream documents what should happen (scope semantics, validation rules, context propagation, property names). Framework integrations implement the contract using their platform's capabilities. The developer mental model is one system; the runtime behaviour is the best each platform can deliver.
+The pattern across all six limits: **share the contract, vary the mechanism.** Upstream documents what should happen (scope semantics, validation rules, context propagation, property names). Framework integrations implement the contract using their platform's capabilities. The developer mental model is one system; the runtime behaviour is the best each platform can deliver.
 
 Where langchain4j-cdi currently diverges most is not in mechanisms (that's expected) but in *vocabulary* — different annotation names, different attribute names, different property names for the same concepts. That's the avoidable inconsistency. Converging on upstream's vocabulary (annotation names, attribute names) and upstream's contracts (validation rules, scope semantics) is achievable even where the mechanisms must differ.
 
