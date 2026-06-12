@@ -76,7 +76,7 @@ All supplier-class attributes become `Class<?>` with direct bean-class reference
 | `chatMemoryProviderSupplier = MySupplier.class` | `chatMemoryProvider = MyProvider.class` (the bean itself, not a supplier wrapping it) | |
 | `retrievalAugmentor = BeanIfExistsRetrievalAugmentorSupplier.class` (default) | Remove attribute — default is now `void.class` (disabled) | **Breaking:** services that relied on auto-discovery must add `retrievalAugmentor = MyAugmentor.class` or `@RagPipeline` |
 | `retrievalAugmentor = NoRetrievalAugmentorSupplier.class` | Remove attribute — `void.class` is the default | |
-| `retrievalAugmentor = MySupplier.class` | `retrievalAugmentor = MyAugmentor.class` | |
+| `retrievalAugmentor = MySupplier.class` | `retrievalAugmentor = MyAugmentor.class` (PR 1); then `@RagPipeline(augmentor = MyAugmentor.class)` (PR 2) | Pre-built augmentors use `@RagPipeline(augmentor = ...)` after PR 2 removes the attribute |
 | `moderationModelSupplier = BeanIfExistsModerationModelSupplier.class` (default) | Remove attribute — `void.class` is the default | **Breaking:** services with `@Moderate` must add `moderationModel = MyModerator.class` |
 | `toolProviderSupplier = BeanIfExistsToolProviderSupplier.class` (default) | Remove attribute — `void.class` is the default | **Breaking:** services relying on auto-discovered `ToolProvider` must add `toolProvider = MyProvider.class` |
 | `toolProviderSupplier = NoToolProviderSupplier.class` | Remove attribute — `void.class` is the default | |
@@ -119,6 +119,7 @@ Composable query-side RAG pipeline. Maps to `DefaultRetrievalAugmentor.builder()
 @Retention(RUNTIME)
 @Target(TYPE)
 public @interface RagPipeline {
+    Class<?> augmentor() default void.class;
     Class<?>[] retrievers() default {};
     Class<?> router() default void.class;
     Class<?> transformer() default void.class;
@@ -127,8 +128,18 @@ public @interface RagPipeline {
 }
 ```
 
+**Two modes — pre-built or decomposed:**
+
+| Mode | Usage | When |
+|------|-------|------|
+| **Pre-built** | `@RagPipeline(augmentor = EasyRetrievalAugmentor.class)` | Monolithic `RetrievalAugmentor` that doesn't decompose into pipeline components |
+| **Decomposed** | `@RagPipeline(retrievers = {ProductRetriever.class}, transformer = HydeTransformer.class)` | Full control over pipeline components |
+
+When `augmentor` is set, all other attributes are ignored — the pre-built augmentor is wired directly. `augmentor` + any other non-default attribute → `DeploymentException`.
+
 | Attribute | Type | Default | Maps to |
 |-----------|------|---------|---------|
+| `augmentor` | `Class<?>` | `void.class` | Pre-built `RetrievalAugmentor` — wired directly, bypasses pipeline composition |
 | `retrievers` | `Class<?>[]` | `{}` | `contentRetriever` (single) / `queryRouter` (multiple via auto-created `DefaultQueryRouter`) |
 | `router` | `Class<?>` | `void.class` | `queryRouter` — explicit router overrides multi-retriever default |
 | `transformer` | `Class<?>` | `void.class` | `queryTransformer` — single `QueryTransformer` CDI bean |
@@ -139,7 +150,11 @@ public @interface RagPipeline {
 
 **Executor:** The processor always injects a `ManagedExecutor` for context propagation when multiple retrievers are routed in parallel. Not exposed as an annotation attribute — the platform manages execution context.
 
-**Validation:** At least one retriever OR a router must be specified. All classes resolved as CDI beans.
+**Validation:**
+- Pre-built mode: `augmentor` set, no other attributes → valid
+- Decomposed mode: at least one retriever OR a router must be specified
+- `augmentor` + any other non-default attribute → `DeploymentException`
+- All classes resolved as CDI beans
 
 ---
 
@@ -155,7 +170,7 @@ public @interface HybridSearch {
     Class<?> sparseModel() default void.class;
     Class<?> store() default EmbeddingStore.class;
     Class<?> reranker() default void.class;
-    Class<?> fusion() default void.class;
+    Class<?> fusion() default RetrievalFusionStrategy.class;
     int maxResults() default 3;
     double minScore() default 0.0;
     Class<?> filter() default void.class;
@@ -175,14 +190,14 @@ public interface ProductRetriever extends ContentRetriever {}
 | `sparseModel` | `Class<?>` | `void.class` (disabled) | `EmbeddingModel` — custom sparse embedding bean |
 | `store` | `Class<?>` | `EmbeddingStore.class` (auto-discover) | `EmbeddingStore` — functionally required |
 | `reranker` | `Class<?>` | `void.class` (disabled) | `ScoringModel` (upstream `dev.langchain4j.model.scoring.ScoringModel`) |
-| `fusion` | `Class<?>` | `void.class` (disabled) | `RetrievalFusionStrategy` (new SPI — see Section 10) |
+| `fusion` | `Class<?>` | `RetrievalFusionStrategy.class` (auto-discover) | `RetrievalFusionStrategy` (new SPI — see Section 10). `RrfFusionStrategy` registered as `@DefaultBean`. Only consulted when both dense and sparse models are active; processor skips fusion with dense-only. |
 | `filter` | `Class<?>` | `void.class` (disabled) | `Filter` (upstream) — static filter bean. Dynamic filters use `Function<Query, Filter>` CDI bean |
 
 **Defaults use interface types for required attributes:** `denseModel` defaults to `EmbeddingModel.class` and `store` defaults to `EmbeddingStore.class` — consistent with the tri-state contract (`interface type = auto-discover`). These are functionally required; if no bean is resolvable → `DeploymentException`.
 
 **Processor behaviour:**
 - Dense only → single `EmbeddingStoreContentRetriever`
-- Dense + sparse → two retrievers, fused (built-in `RrfFusionStrategy` by default, or explicit fusion bean)
+- Dense + sparse → two retrievers, fused via auto-discovered `RetrievalFusionStrategy` (built-in `RrfFusionStrategy` `@DefaultBean`, overridable)
 - Reranker → post-retrieval scoring/reranking step wrapping the retriever(s), using upstream's `ScoringModel`
 - The processor generates the `ContentRetriever` implementation bean
 
@@ -443,15 +458,22 @@ The composition annotations introduce fundamentally new code-generation pipeline
 | `HybridSearchProcessor` (new) | `@HybridSearch` | `ContentRetriever` synthetic bean via `EmbeddingStoreContentRetriever.builder()` + fusion/reranking | `HybridSearchRecorder` |
 | `DocumentIngestionProcessor` (new) | `@DocumentIngestion`, `@MetadataExtractor` | Ingestor synthetic bean via `EmbeddingStoreIngestor.builder()` | `DocumentIngestionRecorder` |
 | `VectorStoreProcessor` (new) | `@VectorStoreCollection` | Startup observer for collection lifecycle | `VectorStoreRecorder` |
-| `TenantIsolationProcessor` (new) | `@TenantIsolation` | Filter/metadata decoration on retriever and ingestor beans | `TenantIsolationRecorder` |
+| `TenantIsolationProcessor` (new) | `@TenantIsolation` | `TenantIsolationBuildItem` — consumed by downstream processors at bean creation time | `TenantIsolationRecorder` |
 
 ### Build item flow
 
-New processors produce build items that `AiServicesProcessor` consumes:
+Processors produce build items consumed by downstream processors. `TenantIsolationProcessor` runs first and produces a build item that `HybridSearchProcessor` and `DocumentIngestionProcessor` consume — tenant-aware filtering/metadata is injected at bean creation time, not decorated post-hoc (Quarkus processors cannot modify another processor's synthetic beans after creation).
 
 ```
+TenantIsolationProcessor
+  → produces: TenantIsolationBuildItem (strategy + resolver class refs)
+
 HybridSearchProcessor
+  → consumes: TenantIsolationBuildItem (optional — adds tenant filter to retriever)
   → produces: ContentRetrieverBuildItem (generated ContentRetriever beans)
+
+DocumentIngestionProcessor
+  → consumes: TenantIsolationBuildItem (optional — adds tenant metadata to ingestor)
 
 RagPipelineProcessor
   → consumes: ContentRetrieverBuildItem (resolves retriever references)
