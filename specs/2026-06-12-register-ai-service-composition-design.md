@@ -494,7 +494,9 @@ Each new processor:
 Each new recorder creates the component using upstream's builder API:
 
 ```java
-// RagPipelineRecorder
+// RagPipelineRecorder — two modes
+// Pre-built: getInjectedReference(augmentorClass)
+// Decomposed: DefaultRetrievalAugmentor.builder() with injected components
 public Function<SyntheticCreationalContext<RetrievalAugmentor>, RetrievalAugmentor>
     createRagPipeline(RagPipelineCreateInfo info) { ... }
 
@@ -571,7 +573,8 @@ public interface ProductIngestor {}
 - `@MetadataExtractor` without `@DocumentIngestion` → error
 - `@VectorStoreCollection` without `@HybridSearch` or `@DocumentIngestion` → error
 - `@TenantIsolation` without `@RagPipeline` or `@DocumentIngestion` → error
-- `@RagPipeline` with neither retrievers nor router → error
+- `@TenantIsolation` with `@RagPipeline(augmentor = ...)` in pre-built mode → error (opaque augmentor — platform can't inject tenant filter; handle tenancy in the augmentor itself)
+- `@RagPipeline` with neither `augmentor` nor retrievers nor router → error
 - `@HybridSearch` or `@DocumentIngestion` with required attributes (EmbeddingModel, EmbeddingStore) unresolvable → error
 
 ---
