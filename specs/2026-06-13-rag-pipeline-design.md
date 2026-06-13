@@ -268,11 +268,17 @@ Build step usage:
 @BuildStep @Record(RUNTIME_INIT)
 void createStandaloneRagPipelines(RagPipelineRecorder recorder, ...) {
     for (StandaloneRagPipeline pipeline : standalonePipelines) {
-        SyntheticBeanBuildItem.configure(RetrievalAugmentor.class)
+        var configurator = SyntheticBeanBuildItem
+            .configure(RetrievalAugmentor.class)
             .addType(pipeline.interfaceDotName())
-            .createWith(recorder.createStandaloneRagPipeline(pipeline.createInfo()))
+            .scope(ApplicationScoped.class)
+            .unremovable()
             .setRuntimeInit()
-            .done();
+            .createWith(recorder.createStandaloneRagPipeline(pipeline.createInfo()));
+
+        addRagInjectionPoints(configurator, pipeline.createInfo());
+
+        beanProducer.produce(configurator.done());
     }
 }
 ```
@@ -300,6 +306,47 @@ public Function<SyntheticCreationalContext<QuarkusAiServiceContext>, QuarkusAiSe
 ```
 
 The `handleDeclarativeServices()` build step signature does NOT change — no `RagPipelineRecorder` parameter needed. `AiServicesRecorder.createDeclarativeAiService()` remains a single-parameter method.
+
+### Shared injection point helper
+
+Both standalone and companion modes need identical injection points matching every `ctx.getInjectedReference()` call in `RagPipelineSupport.buildAugmentor()`. Without declared injection points, CDI won't resolve beans in the creational context and every `getInjectedReference` throws. (Confirmed by existing `EasyRagProcessor` pattern — it declares `.addInjectionPoint(ClassType.create(EmbeddingStore.class))` and `.addInjectionPoint(ClassType.create(EmbeddingModel.class))` for exactly this reason.)
+
+Shared helper used by both `RagPipelineProcessor` (standalone) and `AiServicesProcessor` (companion):
+
+```java
+static void addRagInjectionPoints(
+        SyntheticBeanBuildItem.ExtendedBeanConfigurator configurator,
+        RagPipelineCreateInfo info) {
+    if (info.augmentor().mode() == ComponentResolutionMode.EXPLICIT) {
+        configurator.addInjectionPoint(
+            ClassType.create(DotName.createSimple(info.augmentor().className())));
+        return; // pre-built mode — augmentor manages its own executor
+    }
+    for (String retriever : info.retrieverClassNames()) {
+        configurator.addInjectionPoint(
+            ClassType.create(DotName.createSimple(retriever)));
+    }
+    if (info.router().mode() == ComponentResolutionMode.EXPLICIT) {
+        configurator.addInjectionPoint(
+            ClassType.create(DotName.createSimple(info.router().className())));
+    }
+    if (info.transformer().mode() == ComponentResolutionMode.EXPLICIT) {
+        configurator.addInjectionPoint(
+            ClassType.create(DotName.createSimple(info.transformer().className())));
+    }
+    if (info.aggregator().mode() == ComponentResolutionMode.EXPLICIT) {
+        configurator.addInjectionPoint(
+            ClassType.create(DotName.createSimple(info.aggregator().className())));
+    }
+    if (info.injector().mode() == ComponentResolutionMode.EXPLICIT) {
+        configurator.addInjectionPoint(
+            ClassType.create(DotName.createSimple(info.injector().className())));
+    }
+    configurator.addInjectionPoint(ClassType.create(ManagedExecutor.class));
+}
+```
+
+Pre-built mode adds only the augmentor injection point — no `ManagedExecutor` needed since the pre-built augmentor manages its own executor. Decomposed mode adds each component + `ManagedExecutor`.
 
 ### Wiring logic summary
 
@@ -401,7 +448,7 @@ ComponentResolution retrievalAugmentorResolution = resolveComponent(
    // DELETE entire switch block:
    switch (bi.getRetrievalAugmentorResolutionMode()) { ... }
    ```
-5. When `RagPipelineBuildItem` is present: add injection points for all referenced component classes + `ManagedExecutor`
+5. When `RagPipelineBuildItem` is present: call `addRagInjectionPoints(configurator, ragPipelineCreateInfo)` — shared helper from Section 4
 
 ### AiServicesRecorder
 
@@ -466,12 +513,17 @@ public interface AiServiceWithDecomposedRag {
     class InMemoryRetriever implements ContentRetriever {
         @Inject InMemoryEmbeddingStore<TextSegment> store;
         @Inject EmbeddingModel embeddingModel;
+        private EmbeddingStoreContentRetriever delegate;
+
+        @PostConstruct
+        void init() {
+            delegate = EmbeddingStoreContentRetriever.builder()
+                .embeddingModel(embeddingModel).embeddingStore(store).maxResults(1).build();
+        }
 
         @Override
         public List<Content> retrieve(Query query) {
-            return EmbeddingStoreContentRetriever.builder()
-                .embeddingModel(embeddingModel).embeddingStore(store).maxResults(1).build()
-                .retrieve(query);
+            return delegate.retrieve(query);
         }
     }
 }
@@ -519,3 +571,8 @@ public interface AiServiceWithDecomposedRag {
 4. `standalone` field removed from `RagPipelineCreateInfo`. Mode is structural, not data-driven.
 5. Test migration for `AiServiceWithAutoDiscoveredRetrievalAugmentor` specified concretely: decomposed mode with extracted `ContentRetriever` CDI bean. Full before/after example added.
 6. Recorder integration clarified: `RagPipelineSupport` static utility for shared building logic. `RagPipelineRecorder` used only for standalone mode. `AiServicesRecorder` calls `RagPipelineSupport.buildAugmentor()` directly — no cross-recorder parameter, `handleDeclarativeServices()` build step signature unchanged.
+
+**2026-06-13 rev 3** — Second review revisions:
+7. Standalone build step now declares injection points via `addRagInjectionPoints()` helper. Without them, `ctx.getInjectedReference()` calls in `RagPipelineSupport.buildAugmentor()` would fail at runtime. Helper shared between standalone (`RagPipelineProcessor`) and companion (`AiServicesProcessor`) modes. Pre-built mode adds only augmentor injection point (no `ManagedExecutor`). Follows `EasyRagProcessor` pattern.
+8. Standalone synthetic bean scoped to `@ApplicationScoped`. `RetrievalAugmentor` is a stateless pipeline — build once, reuse. `@Dependent` default would create a new instance per injection point.
+9. Test migration example fixed: `EmbeddingStoreContentRetriever` built once via `@PostConstruct`, not rebuilt per `retrieve()` call.
