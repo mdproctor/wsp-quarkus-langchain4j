@@ -3,7 +3,7 @@ project-sha: d0afde39977d83c54926184af685e8b24e16f451
 date: 2026-06-12
 issue: 2572
 issue-repo: quarkiverse/quarkus-langchain4j
-covers: 2572,2574,2575,2576,2577,2578
+covers: 2572,2574,2578
 flyway-next-v: none
 design-repo: workspace
 design-section-hashes: 
