@@ -11,3 +11,5 @@
 | [2026-06-08-mdp07-the-body-of-work.md](2026-06-08-mdp07-the-body-of-work.md) | 2026-06-08 | The body of work so far |
 | [2026-06-09-mdp01-the-auto-wiring-that-wasnt.md](2026-06-09-mdp01-the-auto-wiring-that-wasnt.md) | 2026-06-09 | The auto-wiring that wasn't |
 | [2026-06-09-mdp08-wrapping-upstream.md](2026-06-09-mdp08-wrapping-upstream.md) | 2026-06-09 | Wrapping upstream until upstream catches up |
+| [2026-06-12-mdp09-convergence-and-cleanup.md](2026-06-12-mdp09-convergence-and-cleanup.md) | 2026-06-12 | Convergence and cleanup |
+| [2026-06-14-mdp01-the-pipeline-that-decomposed-itself.md](2026-06-14-mdp01-the-pipeline-that-decomposed-itself.md) | 2026-06-14 | The Pipeline That Decomposed Itself |
