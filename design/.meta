@@ -1,0 +1,9 @@
+branch: issue-2575-hybrid-search
+project-sha: 370bcdc1bfe421fb225255647460628c265f1359
+date: 2026-06-14
+issue: 2575
+issue-repo: quarkiverse/quarkus-langchain4j
+covers: 2575
+flyway-next-v: none
+design-repo: workspace
+design-section-hashes: 
