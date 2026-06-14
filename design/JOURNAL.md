@@ -22,3 +22,17 @@ Spec went through 3 review rounds. All findings resolved.
 Wrote implementation plan for PR 1 (Foundation). Executed Tasks 1-7: framework changes complete. ComponentResolutionMode enum, @RegisterAiService rewritten (all 17 markers deleted), LangChain4jDotNames cleaned, DeclarativeAiServiceBuildItem/CreateInfo updated with ComponentEntry records, AiServicesProcessor uses resolveComponent(), AiServicesRecorder uses mode switches.
 
 Task 8 (migration of ~100 test/sample files) deferred to next session — mechanical but large.
+
+## 2026-06-14 — @RagPipeline design + implementation (PR 2)
+
+Designed and implemented `@RagPipeline` — composable annotation for query-side RAG pipeline. Spec went through 3 review cycles (9 revisions total). Key design refinements from review:
+
+- Two-state resolution (SKIP/EXPLICIT) for all @RagPipeline attributes — no AUTO_DISCOVER. Consistent with Foundation PR's "explicit over auto-discover" principle. `resolveComponent(value, null)` pattern.
+- Router + retrievers is a DeploymentException, not a warning — mutually exclusive.
+- `RagPipelineSupport` static utility shared between companion and standalone modes — avoids cross-recorder parameter pattern. AiServicesRecorder calls it directly.
+- Injection points must mirror every `ctx.getInjectedReference()` call — `addRagInjectionPoints()` helper shared between RagPipelineProcessor (standalone) and AiServicesProcessor (companion).
+- Standalone beans scoped `@ApplicationScoped` (not `@Dependent` default).
+
+Implementation: 6 new files (annotation, record, support, recorder, build item, processor), 18 modified files (removal + migration). 732 tests green. PR #2597 created on blessed repo, targeting main, stacked on #2591 (Foundation).
+
+Removed `retrievalAugmentor` from `@RegisterAiService`. Migrated 13 callers (6 RAG tests, 2 core tests, 1 provider test, 4 samples).
