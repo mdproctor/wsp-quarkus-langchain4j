@@ -36,3 +36,21 @@ Designed and implemented `@RagPipeline` — composable annotation for query-side
 Implementation: 6 new files (annotation, record, support, recorder, build item, processor), 18 modified files (removal + migration). 732 tests green. PR #2597 created on blessed repo, targeting main, stacked on #2591 (Foundation).
 
 Removed `retrievalAugmentor` from `@RegisterAiService`. Migrated 13 callers (6 RAG tests, 2 core tests, 1 provider test, 4 samples).
+
+## 2026-06-14 — Code review pass on all three PRs; chain rebased and squashed
+
+Ran parallel AI-assisted code review on PR #2591 (Foundation), PR #2534 (Agentic C1), and PR #2597 (@RagPipeline). Several findings needed careful verification before applying:
+
+Genuine bugs fixed:
+- systemMessageProvider EXPLICIT used raw reflection instead of CDI — fixed to use `creationalContext.getInjectedReference()`
+- Dead `import javax.tools.Tool` (Java Compiler API, not langchain4j @Tool) removed from AiServicesProcessor
+- `AGENT_INSTANCE_FACTORY` in AgenticRecorder used TCCL-only classloader — extended with three-classloader fallback matching `loadClassSafe()`
+- `validateMcpToolBox` used `&&` instead of `||` — agents with multiple @McpToolBox + single agentic method silently passed
+- AgentListener @Dependent check fired unconditionally — now guarded on agents being present
+
+False positives (pushed back with reasoning):
+- "@Moderate is silently broken" — intentional design documented in Foundation spec as breaking change
+- "retrievalAugmentor dead code in #2591" — attribute still existed in that branch (removed in #2574)
+- "Advertised @Retry/@Transactional checks don't exist" — reviewer misread the Javadoc; checks are implemented
+
+All three PRs squashed to single clean commits. PR #2597 rebased onto updated Foundation via `git rebase --onto`. Chain verified: 734 tests green.
