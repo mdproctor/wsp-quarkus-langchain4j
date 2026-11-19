@@ -3,6 +3,9 @@ title: "Convergence and Cleanup"
 date: 2026-06-12
 sequence: mdp09
 tags: [langchain4j-cdi, convergence, RegisterAiService, composition-annotations]
+entry_type: note
+subtype: diary
+projects: [quarkiverse/quarkus-langchain4j]
 ---
 
 # Convergence and Cleanup

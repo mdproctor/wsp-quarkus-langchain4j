@@ -1,3 +1,12 @@
+---
+layout: post
+title: "Chapter 1: The Safety Baseline"
+date: 2026-06-04
+entry_type: note
+subtype: diary
+projects: [quarkiverse/quarkus-langchain4j]
+---
+
 # Chapter 1: The Safety Baseline
 
 The Chapter 1 work on the agentic module is shipped. The goal was straightforward: establish a safe baseline before any feature work lands. Eight audit findings covering infrastructure, CDI integration, FaultTolerance safety, and a config namespace. In practice most of them took about as long as expected. Two didn't.

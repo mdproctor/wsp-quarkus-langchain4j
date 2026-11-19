@@ -1,3 +1,12 @@
+---
+layout: post
+title: "Infrastructure, Protocols, and a Proper Maven Fix"
+date: 2026-06-05
+entry_type: note
+subtype: diary
+projects: [quarkiverse/quarkus-langchain4j]
+---
+
 # Infrastructure, Protocols, and a Proper Maven Fix
 
 A session that started with a reviewer comment and ended with improved tooling for every future project.
